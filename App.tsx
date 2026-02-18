@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Sparkles, Radio, Database, Bell, ShieldCheck, Globe, AlertTriangle } from 'lucide-react';
+import { Sparkles, Radio, Database, Bell, ShieldCheck, Globe, AlertTriangle, ShieldX } from 'lucide-react';
 import { WATCHLIST, DEFAULT_CONFIG } from './constants';
 import { Candle, Signal, BotState, AppConfig, MacroCheck } from './types';
 import { fetchLatestVix } from './services/dataModule';
@@ -41,7 +41,7 @@ const App: React.FC = () => {
   const [isRunning, setIsRunning] = useState(true);
   const [macroStatus, setMacroStatus] = useState<MacroCheck | null>(null);
   const [isPrimed, setIsPrimed] = useState(false);
-  const [isDataError, setIsDataError] = useState(false);
+  const [dataIntegrity, setDataIntegrity] = useState(0); // 0 to 100 scale
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [feedStatus, setFeedStatus] = useState<'LIVE' | 'FALLBACK'>('FALLBACK');
 
@@ -78,15 +78,17 @@ const App: React.FC = () => {
       }
 
       const initialData: Record<string, Candle[]> = {};
-      let errors = 0;
+      let realCount = 0;
       
       await Promise.all(WATCHLIST.map(async (symbol) => {
         const history = await getHistoricalContext(symbol);
         initialData[symbol] = history;
-        if (history.some(c => c.quality === 'BACKFILLED')) errors++;
+        if (history.some(c => c.quality === 'REALTIME')) {
+          realCount++;
+        }
       }));
 
-      setIsDataError(errors > 0);
+      setDataIntegrity(Math.round((realCount / WATCHLIST.length) * 100));
       setMarketData(initialData);
       setIsPrimed(true);
     };
@@ -98,32 +100,48 @@ const App: React.FC = () => {
     if (!isRunning || !isPrimed) return;
     
     const tick = async () => {
-      const prices = await fetchDeterministicPrices(WATCHLIST);
-      if (prices.length === 0) return;
+      try {
+        const prices = await fetchDeterministicPrices(WATCHLIST);
+        if (prices.length === 0) return;
 
-      const isLive = prices.some(p => p.isReal);
-      setFeedStatus(isLive ? 'LIVE' : 'FALLBACK');
-      setLatestTickers(prices);
-      setVix(fetchLatestVix());
-      
-      setMarketData(prev => {
-        const next = { ...prev };
-        prices.forEach(ticker => {
-          const history = next[ticker.symbol] || [];
-          if (history.length === 0) return;
-          const last = history[history.length - 1];
-          const newCandle: Candle = {
-            ...last,
-            timestamp: ticker.timestamp,
-            close: ticker.price,
-            high: Math.max(last.high, ticker.price),
-            low: Math.min(last.low, ticker.price),
-            volume: ticker.volume
-          };
-          next[ticker.symbol] = [...history.slice(1), newCandle];
+        const isLive = prices.some(p => p.isReal);
+        setFeedStatus(isLive ? 'LIVE' : 'FALLBACK');
+        setLatestTickers(prices);
+        setVix(fetchLatestVix());
+        
+        setMarketData(prev => {
+          const next = { ...prev };
+          prices.forEach(ticker => {
+            const history = next[ticker.symbol] || [];
+            if (history.length === 0) return;
+            const last = history[history.length - 1];
+            
+            // Deduplicate timestamps to prevent chart bloat
+            if (ticker.timestamp === last.timestamp) {
+              next[ticker.symbol][history.length - 1] = {
+                ...last,
+                close: ticker.price,
+                high: Math.max(last.high, ticker.price),
+                low: Math.min(last.low, ticker.price)
+              };
+            } else {
+              const newCandle: Candle = {
+                ...last,
+                timestamp: ticker.timestamp,
+                close: ticker.price,
+                high: Math.max(last.high, ticker.price),
+                low: Math.min(last.low, ticker.price),
+                volume: ticker.volume,
+                quality: ticker.isReal ? 'REALTIME' : 'BACKFILLED'
+              };
+              next[ticker.symbol] = [...history.slice(1), newCandle];
+            }
+          });
+          return next;
         });
-        return next;
-      });
+      } catch (err) {
+        console.error("Tick Cycle Exception:", err);
+      }
     };
 
     const id = setInterval(tick, 5000);
@@ -199,14 +217,14 @@ const App: React.FC = () => {
                  Feed: {feedStatus === 'LIVE' ? 'Upstream Live' : 'Deterministic Fallback'}
                </span>
              </div>
-             {isDataError && (
-               <div className="flex items-center gap-2 border-l border-slate-800 pl-8">
-                 <AlertTriangle size={12} className="text-amber-500" />
-                 <span className="text-[9px] font-black text-amber-500 uppercase tracking-widest">
-                   History: Synthetic Buffer Active
-                 </span>
-               </div>
-             )}
+             
+             <div className="flex items-center gap-2 border-l border-slate-800 pl-8">
+               <Database size={12} className={dataIntegrity > 80 ? "text-emerald-500" : dataIntegrity > 0 ? "text-amber-500" : "text-rose-500"} />
+               <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
+                 Data Integrity: {dataIntegrity}% {dataIntegrity < 100 && "(Hybrid Buffer)"}
+               </span>
+             </div>
+
              <div className="flex items-center gap-2 border-l border-slate-800 pl-8">
                <Globe size={12} className={config.isAiEnabled ? "text-blue-500" : "text-slate-700"} />
                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
