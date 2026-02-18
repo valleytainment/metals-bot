@@ -4,8 +4,32 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Metals Signal Bot</title>
+    <title>Metals Signal Bot | Professional Terminal</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+              mono: ['JetBrains Mono', 'monospace'],
+            },
+          },
+        },
+      }
+    </script>
+    <style>
+      ::-webkit-scrollbar { width: 6px; height: 6px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 10px; }
+      ::-webkit-scrollbar-thumb:hover { background: #334155; }
+      .custom-scrollbar { scrollbar-width: thin; scrollbar-color: #1e293b transparent; }
+      @keyframes float { 0% { transform: translateY(0px); } 50% { transform: translateY(-5px); } 100% { transform: translateY(0px); } }
+      .animate-float { animation: float 3s ease-in-out infinite; }
+    </style>
   <script type="importmap">
 {
   "imports": {
@@ -19,7 +43,7 @@
 }
 </script>
 </head>
-  <body class="bg-slate-950 text-slate-100 overflow-x-hidden">
+  <body class="bg-[#020617] text-slate-100 overflow-x-hidden font-sans">
     <div id="root"></div>
   </body>
 </html>

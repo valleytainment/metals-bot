@@ -2,14 +2,14 @@
 /**
  * @file components/SignalCard.tsx
  * @description Advanced analytics card for a single symbol.
- * Combines indicator logic, AI insights, real-time pricing, and execution metrics.
+ * Combines indicator logic, AI insights, and execution metrics in a "Score 10+" UI.
  */
 
 import React, { useState, useEffect } from 'react';
 import { Signal, Candle, BotState } from '../types';
 import TradingChart from './TradingChart';
 import { getSignalCommentary } from '../services/geminiService';
-import { Info, AlertTriangle, ShieldCheck, CheckCircle2, XCircle, TrendingUp, Gauge, Sparkles } from 'lucide-react';
+import { Info, AlertTriangle, ShieldCheck, CheckCircle2, XCircle, TrendingUp, Gauge, Sparkles, Target, Ban } from 'lucide-react';
 import { calculateIndicators } from '../services/indicators';
 
 interface SignalCardProps {
@@ -21,12 +21,12 @@ interface SignalCardProps {
 }
 
 const SignalCard: React.FC<SignalCardProps> = ({ symbol, signal, candles, state, isAiEnabled }) => {
-  const [commentary, setCommentary] = useState<string>("Initializing analysis...");
+  const [commentary, setCommentary] = useState<string>("Initializing deep-tissue analysis...");
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     if (!isAiEnabled) {
-      setCommentary("AI commentary disabled in settings.");
+      setCommentary("Gemini AI commentary is currently inactive.");
       return;
     }
 
@@ -36,10 +36,12 @@ const SignalCard: React.FC<SignalCardProps> = ({ symbol, signal, candles, state,
         setCommentary(res);
         setIsLoading(false);
       });
+    } else if (state === 'COOLDOWN') {
+      setCommentary("Engine in recovery state. Monitoring for next high-probability node.");
     } else {
-      setCommentary(signal?.action === 'WAIT' ? "Scanning for high-probability setups..." : "Monitoring active position.");
+      setCommentary(signal?.action === 'WAIT' ? "Scanning order books and historical clusters..." : "Managing active position parameters.");
     }
-  }, [signal?.id, isAiEnabled]);
+  }, [signal?.id, isAiEnabled, state]);
 
   const indicators = candles.length >= 200 ? calculateIndicators(candles) : null;
   const latest = candles[candles.length - 1];
@@ -48,129 +50,126 @@ const SignalCard: React.FC<SignalCardProps> = ({ symbol, signal, candles, state,
 
   const getActionStyles = (action: string | undefined) => {
     switch (action) {
-      case 'BUY': return 'bg-blue-600 text-white shadow-lg shadow-blue-900/40 ring-1 ring-blue-400';
-      case 'EXIT': return 'bg-rose-600 text-white shadow-lg shadow-rose-900/40';
-      case 'HOLD': return 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/30';
+      case 'BUY': return 'bg-blue-600 text-white shadow-xl shadow-blue-600/30';
+      case 'EXIT': return 'bg-rose-600 text-white shadow-xl shadow-rose-600/30';
+      case 'HOLD': return 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20';
       case 'PAUSE_DATA_STALE':
-      case 'PAUSE_REGIME': return 'bg-orange-600/20 text-orange-400 border border-orange-500/30';
+      case 'PAUSE_REGIME': return 'bg-orange-500/10 text-orange-500 border border-orange-500/20';
       default: return 'bg-slate-800 text-slate-400';
     }
   };
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden flex flex-col shadow-2xl transition-all hover:border-slate-600 group">
+    <div className="bg-[#0f172a]/60 border border-slate-800/60 rounded-[2rem] overflow-hidden flex flex-col shadow-2xl transition-all hover:border-blue-500/30 group">
       
-      {/* HEADER: SYMBOL & STATUS */}
-      <div className="p-5 border-b border-slate-800 flex justify-between items-center bg-slate-900/50">
-        <div className="flex items-center gap-3">
-          <div className={`w-2 h-10 rounded-full ${state === 'LONG' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-700'}`} />
+      {/* HEADER */}
+      <div className="px-8 py-6 border-b border-slate-800/40 flex justify-between items-center bg-slate-900/30 backdrop-blur-sm">
+        <div className="flex items-center gap-4">
+          <div className={`w-1.5 h-10 rounded-full ${state === 'LONG' ? 'bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.5)]' : 'bg-slate-700'}`} />
           <div>
-            <h3 className="text-xl font-black text-slate-100 group-hover:text-blue-400 transition-colors">{symbol}</h3>
-            <p className="text-[10px] text-slate-500 font-mono tracking-widest uppercase">
-              {state === 'LONG' ? 'ACTIVE POSITION' : state === 'COOLDOWN' ? 'RECOVERY PHASE' : 'SCANNING'}
+            <h3 className="text-2xl font-black text-white group-hover:text-blue-500 transition-colors tracking-tight">{symbol}</h3>
+            <p className="text-[9px] text-slate-500 font-mono tracking-[0.2em] uppercase font-black">
+              {state === 'LONG' ? 'Live Position' : state === 'COOLDOWN' ? 'Recovery Cycle' : 'Market Observation'}
             </p>
           </div>
         </div>
-        <div className={`px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-widest flex items-center gap-2 ${getActionStyles(signal?.action)}`}>
-          {signal?.action || 'SYNCING'}
+        <div className={`px-5 py-2 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 ${getActionStyles(signal?.action)}`}>
+          {signal?.action === 'WAIT' ? <TrendingUp size={12} /> : signal?.action === 'BUY' ? <Sparkles size={12} /> : <Ban size={12} />}
+          {signal?.action || 'SCANNING'}
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col min-h-[450px]">
+      <div className="flex-1 flex flex-col">
         
-        {/* PRICE SUMMARY SECTION */}
-        <div className="px-5 py-6 flex items-center justify-between border-b border-slate-800/50">
-          <div className="flex flex-col">
-            <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-1 flex items-center gap-1">
-              Live Price <Gauge size={10} />
+        {/* PRICE DETAIL */}
+        <div className="px-8 py-8 flex items-center justify-between">
+          <div>
+            <span className="text-[10px] text-slate-500 font-black uppercase tracking-[0.15em] mb-2 block flex items-center gap-2">
+              Current Valuation <Gauge size={12} className="text-blue-500" />
             </span>
-            <div className="flex items-baseline gap-2">
-              <span className={`text-4xl font-black font-mono tracking-tighter ${isPriceUp ? 'text-emerald-400' : 'text-rose-400'}`}>
+            <div className="flex items-baseline gap-3">
+              <span className={`text-5xl font-black font-mono tracking-tighter ${isPriceUp ? 'text-white' : 'text-rose-400'}`}>
                 ${latest?.close.toFixed(2)}
               </span>
-              <span className={`text-xs font-bold ${isPriceUp ? 'text-emerald-500' : 'text-rose-500'}`}>
+              <span className={`text-sm font-black font-mono ${isPriceUp ? 'text-emerald-500' : 'text-rose-500'}`}>
                 {isPriceUp ? '▲' : '▼'} {Math.abs(latest?.close - (prev?.close || 0)).toFixed(2)}
               </span>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-4 text-right">
+          
+          <div className="flex flex-col gap-4 text-right">
              <div className="flex flex-col">
-               <span className="text-[8px] text-slate-600 font-bold uppercase">Session High</span>
-               <span className="text-xs font-mono text-slate-400">${latest?.high.toFixed(2)}</span>
+               <span className="text-[8px] text-slate-600 font-black uppercase tracking-widest">Hi-Range</span>
+               <span className="text-sm font-mono text-slate-400 font-bold">${latest?.high.toFixed(2)}</span>
              </div>
              <div className="flex flex-col">
-               <span className="text-[8px] text-slate-600 font-bold uppercase">Session Low</span>
-               <span className="text-xs font-mono text-slate-400">${latest?.low.toFixed(2)}</span>
+               <span className="text-[8px] text-slate-600 font-black uppercase tracking-widest">Lo-Range</span>
+               <span className="text-sm font-mono text-slate-400 font-bold">${latest?.low.toFixed(2)}</span>
              </div>
           </div>
         </div>
 
-        {/* INDICATOR & CONFIDENCE STRIP */}
-        <div className="p-5 grid grid-cols-2 gap-4 border-b border-slate-800/50 bg-slate-950/20">
-          <div className="space-y-1">
-            <div className="flex items-center gap-1">
-              <span className="text-[10px] text-slate-500 font-bold uppercase">Confidence</span>
-              <div className="group/tip relative cursor-help">
-                <Info size={10} className="text-slate-600" />
-                <div className="absolute bottom-full left-0 mb-2 w-48 p-2 bg-slate-950 border border-slate-800 rounded text-[10px] hidden group-hover/tip:block z-50 shadow-2xl">
-                  Adjusted probability based on Signal Integrity + Market Regime filters.
-                </div>
-              </div>
+        {/* INDICATOR HUB */}
+        <div className="px-8 py-5 grid grid-cols-2 gap-8 border-y border-slate-800/40 bg-[#0f172a]/40">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-slate-500 font-black uppercase tracking-widest">Signal Confidence</span>
+              <span className="text-xs font-black font-mono text-blue-400">{signal?.confidenceAdj || 0}%</span>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="flex-1 h-2 bg-slate-800 rounded-full overflow-hidden">
-                <div 
-                  className="h-full bg-blue-500 transition-all duration-1000 ease-out shadow-[0_0_8px_rgba(59,130,246,0.5)]" 
-                  style={{ width: `${signal?.confidenceAdj || 0}%` }}
-                />
-              </div>
-              <span className="text-sm font-bold font-mono text-slate-300">{signal?.confidenceAdj || 0}%</span>
+            <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-blue-500 transition-all duration-1000 ease-out shadow-[0_0_12px_rgba(59,130,246,0.6)]" 
+                style={{ width: `${signal?.confidenceAdj || 0}%` }}
+              />
             </div>
           </div>
 
-          <div className="space-y-1">
-            <span className="text-[10px] text-slate-500 font-bold uppercase">Risk Profile</span>
-            <div className="flex gap-2">
+          <div className="space-y-2">
+            <span className="text-[10px] text-slate-500 font-black uppercase tracking-widest block">Risk Sensitivity</span>
+            <div className="flex">
               {signal?.vix && signal.vix > 25 ? (
-                <span className="text-xs text-orange-400 flex items-center gap-1 font-bold bg-orange-500/10 px-2 py-0.5 rounded border border-orange-500/20">
-                  <AlertTriangle size={12} /> Aggressive Vol
-                </span>
+                <div className="flex items-center gap-2 px-3 py-1 bg-orange-500/10 text-orange-400 rounded-xl border border-orange-500/20 text-[10px] font-black uppercase tracking-wider">
+                  <AlertTriangle size={12} /> High Volatility
+                </div>
               ) : (
-                <span className="text-xs text-emerald-400 flex items-center gap-1 font-bold bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
-                  <ShieldCheck size={12} /> Stable Regime
-                </span>
+                <div className="flex items-center gap-2 px-3 py-1 bg-emerald-500/10 text-emerald-400 rounded-xl border border-emerald-500/20 text-[10px] font-black uppercase tracking-wider">
+                  <ShieldCheck size={12} /> Low Volatility
+                </div>
               )}
             </div>
           </div>
         </div>
 
-        {/* LOGIC CONDITION STATUS */}
-        <div className="px-5 py-3 grid grid-cols-4 gap-2 border-b border-slate-800/50">
-          <ConditionItem label="Trend" active={indicators ? latest.close > indicators.ema200 : false} tip="Price > 200 EMA" />
-          <ConditionItem label="Momentum" active={indicators ? indicators.rsi14 >= 50 : false} tip="RSI(14) >= 50" />
-          <ConditionItem label="Trigger" active={indicators ? latest.close > indicators.ema20 : false} tip="Price > 20 EMA" />
-          <ConditionItem label="Volume" active={indicators ? latest.volume >= indicators.volSma20 : false} tip="Volume > 20 SMA" />
+        {/* LOGIC GATES */}
+        <div className="px-8 py-4 grid grid-cols-4 gap-4 bg-slate-900/20">
+          <ConditionBadge label="Trend" active={indicators ? latest.close > indicators.ema200 : false} info="Above 200 EMA" />
+          <ConditionBadge label="Momnt" active={indicators ? indicators.rsi14 >= 50 : false} info="RSI 14 ≥ 50" />
+          <ConditionBadge label="Trig" active={indicators ? latest.close > indicators.ema20 : false} info="Above 20 EMA" />
+          <ConditionBadge label="Vol" active={indicators ? latest.volume >= indicators.volSma20 : false} info="Above Vol Avg" />
         </div>
 
-        {/* CHARTING AREA */}
-        <div className="h-64 px-4 pt-4">
-          <TradingChart symbol={symbol} candles={candles} />
+        {/* DATA VIZ */}
+        <div className="h-72 w-full px-4 relative">
+           <div className="absolute top-4 left-8 text-[9px] font-black text-slate-600 uppercase tracking-widest z-10">Historical Price Vectors</div>
+           <TradingChart symbol={symbol} candles={candles} />
         </div>
 
-        {/* AI COMMENTARY */}
-        <div className="p-5 bg-slate-950/50 mt-auto border-t border-slate-800">
-          <div className="flex items-start gap-3">
-            <div className={`w-8 h-8 rounded-lg ${isAiEnabled ? 'bg-blue-500/10 border-blue-500/20' : 'bg-slate-800 border-slate-700'} flex items-center justify-center shrink-0 border`}>
-              {isAiEnabled ? <Sparkles size={16} className="text-blue-500" /> : <TrendingUp size={16} className="text-slate-600" />}
+        {/* AI INSIGHTS */}
+        <div className="p-8 bg-slate-950/40 border-t border-slate-800/40 mt-auto">
+          <div className="flex items-start gap-4">
+            <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 border transition-all ${isAiEnabled ? 'bg-blue-600/10 border-blue-500/20 shadow-lg shadow-blue-500/5' : 'bg-slate-800 border-slate-700 opacity-50'}`}>
+              {isAiEnabled ? <Sparkles size={18} className="text-blue-500 animate-float" /> : <TrendingUp size={18} className="text-slate-500" />}
             </div>
-            <div className="space-y-2 flex-1">
-              <p className={`text-sm leading-relaxed italic line-clamp-2 ${isAiEnabled ? 'text-slate-400' : 'text-slate-600'}`}>
-                {isLoading ? "Generating technical thesis..." : `"${commentary}"`}
-              </p>
-              <div className="flex flex-wrap gap-1.5">
+            <div className="space-y-3 flex-1">
+              <div className="relative group/ai">
+                <p className={`text-sm leading-relaxed font-medium italic transition-colors ${isAiEnabled ? 'text-slate-300' : 'text-slate-600'}`}>
+                  {isLoading ? "Consulting Gemini core processors..." : `"${commentary}"`}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
                 {signal?.reasonCodes.map(code => (
-                  <span key={code} className="text-[9px] font-bold bg-slate-800 text-slate-400 px-2 py-0.5 rounded uppercase border border-slate-700">
-                    {code}
+                  <span key={code} className="text-[8px] font-black bg-slate-900/80 text-blue-400 px-2.5 py-1 rounded-lg uppercase border border-slate-800/80 tracking-widest">
+                    {code.replace(/_/g, ' ')}
                   </span>
                 ))}
               </div>
@@ -178,13 +177,13 @@ const SignalCard: React.FC<SignalCardProps> = ({ symbol, signal, candles, state,
           </div>
         </div>
 
-        {/* TRADE EXECUTION (CONTEXTUAL) */}
+        {/* EXECUTION BAR */}
         {signal?.action === 'BUY' && (
-          <div className="p-4 bg-blue-600/10 border-t border-blue-500/20">
-             <div className="grid grid-cols-3 gap-2 w-full">
-                <ExecutionMetric label="Entry Target" value={`$${signal.entry?.toFixed(2)}`} />
-                <ExecutionMetric label="Hard Stop" value={`$${signal.stop?.toFixed(2)}`} color="text-rose-400" />
-                <ExecutionMetric label="Rec. Shares" value={signal.shares || 0} color="text-emerald-400" />
+          <div className="px-8 py-6 bg-blue-600/5 border-t border-blue-500/20 animate-in slide-in-from-bottom-2">
+             <div className="flex items-center gap-6">
+                <ExecutionStat label="Target" value={`$${signal.entry?.toFixed(2)}`} icon={<Target size={12} className="text-blue-400" />} />
+                <ExecutionStat label="Safety Stop" value={`$${signal.stop?.toFixed(2)}`} color="text-rose-400" />
+                <ExecutionStat label="Ideal Size" value={`${signal.shares} Shares`} color="text-emerald-400" />
              </div>
           </div>
         )}
@@ -193,22 +192,25 @@ const SignalCard: React.FC<SignalCardProps> = ({ symbol, signal, candles, state,
   );
 };
 
-const ConditionItem = ({ label, active, tip }: { label: string, active: boolean, tip: string }) => (
-  <div className="group/item relative flex flex-col items-center gap-1 cursor-default">
-    <div className={`p-1 rounded-full ${active ? 'bg-emerald-500/10 text-emerald-500' : 'bg-slate-800 text-slate-600'}`}>
-      {active ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
+const ConditionBadge = ({ label, active, info }: { label: string, active: boolean, info: string }) => (
+  <div className="group/item relative flex flex-col items-center gap-1.5 transition-all">
+    <div className={`p-1.5 rounded-lg border transition-all ${active ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500 shadow-sm' : 'bg-slate-800/40 border-slate-800/40 text-slate-600'}`}>
+      {active ? <CheckCircle2 size={14} /> : <XCircle size={14} />}
     </div>
-    <span className={`text-[8px] font-bold uppercase tracking-tighter ${active ? 'text-emerald-400' : 'text-slate-600'}`}>{label}</span>
-    <div className="absolute bottom-full mb-1 p-2 bg-slate-950 text-[10px] whitespace-nowrap rounded border border-slate-800 hidden group-hover/item:block shadow-2xl z-50">
-      {tip}
+    <span className={`text-[9px] font-black uppercase tracking-widest ${active ? 'text-emerald-500' : 'text-slate-600'}`}>{label}</span>
+    <div className="absolute bottom-full mb-3 px-3 py-2 bg-black/90 text-[10px] font-bold text-white whitespace-nowrap rounded-xl border border-slate-800 hidden group-hover/item:block shadow-2xl z-50 animate-in fade-in zoom-in-95 duration-200">
+      {info}
     </div>
   </div>
 );
 
-const ExecutionMetric = ({ label, value, color = "text-slate-100" }: any) => (
-  <div className="bg-slate-900/50 p-2 rounded border border-slate-800/50 flex flex-col items-center">
-    <p className="text-[8px] text-slate-500 font-bold uppercase mb-0.5 tracking-widest">{label}</p>
-    <p className={`text-xs font-black font-mono ${color}`}>{value}</p>
+const ExecutionStat = ({ label, value, color = "text-white", icon }: any) => (
+  <div className="flex-1 bg-[#020617]/40 p-3.5 rounded-2xl border border-slate-800/60 flex flex-col items-center gap-1">
+    <div className="flex items-center gap-1.5">
+      {icon}
+      <span className="text-[8px] text-slate-500 font-black uppercase tracking-[0.2em]">{label}</span>
+    </div>
+    <p className={`text-sm font-black font-mono ${color}`}>{value}</p>
   </div>
 );
 
