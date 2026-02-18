@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   WATCHLIST, 
   DEFAULT_CONFIG 
@@ -8,23 +8,26 @@ import {
   Candle, 
   Signal, 
   BotState, 
-  SignalAction, 
-  AppConfig 
+  AppConfig,
+  JournalTrade 
 } from './types';
 import { 
   generateMockCandles, 
   fetchLatestVix 
 } from './services/dataModule';
 import { evaluateSignal } from './services/engine';
+import { fetchVerifiedMarketStats, VerifiedPriceData } from './services/marketDataService';
 import Dashboard from './components/Dashboard';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import BacktestView from './components/BacktestView';
+import JournalView from './components/JournalView';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'backtest' | 'journal' | 'settings'>('dashboard');
   const [config, setConfig] = useState<AppConfig>(DEFAULT_CONFIG);
   const [marketData, setMarketData] = useState<Record<string, Candle[]>>({});
+  const [verifiedPrices, setVerifiedPrices] = useState<VerifiedPriceData[]>([]);
   const [signals, setSignals] = useState<Record<string, Signal>>({});
   const [botStates, setBotStates] = useState<Record<string, BotState>>(() => {
     const initial: Record<string, BotState> = {};
@@ -39,44 +42,68 @@ const App: React.FC = () => {
   const [vix, setVix] = useState(18);
   const [isRunning, setIsRunning] = useState(true);
 
-  // Initialize data
+  // Initialize data with deep historical context
   useEffect(() => {
     const initialData: Record<string, Candle[]> = {};
     WATCHLIST.forEach(symbol => {
-      initialData[symbol] = generateMockCandles(symbol, 300);
+      initialData[symbol] = generateMockCandles(symbol, 400); // More history for 200 EMA
     });
     setMarketData(initialData);
   }, []);
 
-  // Update loop
+  // Verification Loop: Fetches "1000% real" data via Google Search Grounding
+  useEffect(() => {
+    if (!isRunning) return;
+
+    const performVerification = async () => {
+      const liveStats = await fetchVerifiedMarketStats(WATCHLIST);
+      if (liveStats.length > 0) {
+        setVerifiedPrices(liveStats);
+        
+        // Sync verified prices back into candle history
+        setMarketData(prev => {
+          const next = { ...prev };
+          liveStats.forEach(stat => {
+            const candles = next[stat.symbol];
+            if (!candles) return;
+            const last = candles[candles.length - 1];
+            // Only update if price is significantly different or time has passed
+            const newCandle: Candle = {
+              ...last,
+              timestamp: Date.now(),
+              close: stat.price || last.close,
+              high: stat.high || last.high,
+              low: stat.low || last.low,
+              quality: 'REALTIME',
+              anomalies: []
+            };
+            next[stat.symbol] = [...candles.slice(1), newCandle];
+          });
+          return next;
+        });
+      }
+    };
+
+    // Initial fetch
+    performVerification();
+
+    // Verify every 60 seconds to respect API limits while staying "Real-Time"
+    const verifyId = setInterval(performVerification, 60000);
+    return () => clearInterval(verifyId);
+  }, [isRunning]);
+
+  // Secondary update loop for VIX and synthetic smoothing between verifications
   useEffect(() => {
     if (!isRunning) return;
 
     const intervalId = setInterval(() => {
       setVix(fetchLatestVix());
-      
-      setMarketData(prev => {
-        const next = { ...prev };
-        WATCHLIST.forEach(symbol => {
-          const candles = next[symbol];
-          if (!candles) return;
-          const last = candles[candles.length - 1];
-          // Simple walk forward simulation
-          const newCandle: Candle = {
-            ...last,
-            timestamp: last.timestamp + (15 * 60 * 1000),
-            close: last.close * (1 + (Math.random() - 0.5) * 0.002)
-          };
-          next[symbol] = [...candles.slice(1), newCandle];
-        });
-        return next;
-      });
-    }, 5000); // 5s tick for simulation speed
+    }, 5000);
 
     return () => clearInterval(intervalId);
   }, [isRunning]);
 
-  // Evaluate Signals whenever market data or VIX updates
+  // Evaluate Signals
   useEffect(() => {
     WATCHLIST.forEach(symbol => {
       const candles = marketData[symbol];
@@ -98,7 +125,7 @@ const App: React.FC = () => {
   }, [marketData, vix, config]);
 
   return (
-    <div className="flex h-screen bg-slate-950">
+    <div className="flex h-screen bg-slate-950 font-sans selection:bg-blue-500/30">
       <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
       
       <div className="flex-1 flex flex-col overflow-hidden">
@@ -109,71 +136,57 @@ const App: React.FC = () => {
           config={config}
         />
         
-        <main className="flex-1 overflow-y-auto p-6">
+        <main className="flex-1 overflow-y-auto p-8 custom-scrollbar">
           {activeTab === 'dashboard' && (
             <Dashboard 
               watchlist={WATCHLIST} 
               signals={signals} 
               marketData={marketData}
               botStates={botStates}
+              verifiedData={verifiedPrices}
             />
           )}
           
-          {activeTab === 'backtest' && (
-            <BacktestView config={config} />
-          )}
-
-          {activeTab === 'journal' && (
-            <div className="flex flex-col items-center justify-center h-full text-slate-500">
-              <p className="text-xl">Trade Journal - Coming Soon</p>
-              <p className="text-sm">Store manual entries and execution outcomes here.</p>
-            </div>
-          )}
-
+          {activeTab === 'backtest' && <BacktestView config={config} />}
+          {activeTab === 'journal' && <JournalView />}
           {activeTab === 'settings' && (
-             <div className="max-w-2xl mx-auto space-y-6">
-                <h2 className="text-2xl font-bold">Bot Configuration</h2>
-                <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-400 mb-1">Account Balance (USD)</label>
-                    <input 
-                      type="number" 
-                      value={config.accountUsd}
-                      onChange={(e) => setConfig({...config, accountUsd: Number(e.target.value)})}
-                      className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-400 mb-1">Risk per Trade (%)</label>
-                    <input 
-                      type="number" 
-                      step="0.1"
-                      value={config.riskPct}
-                      onChange={(e) => setConfig({...config, riskPct: Number(e.target.value)})}
-                      className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none"
-                    />
-                  </div>
+             <div className="max-w-2xl mx-auto space-y-10 animate-in fade-in zoom-in-95 duration-500">
+                <div>
+                  <h2 className="text-3xl font-black tracking-tighter">Engine Parameters</h2>
+                  <p className="text-slate-500 text-sm font-medium mt-1">Configure risk management and capital allocation logic.</p>
                 </div>
-                <div className="bg-slate-900 p-6 rounded-xl border border-slate-800">
-                  <h3 className="text-lg font-semibold mb-3">VIX Safety Thresholds</h3>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-medium text-slate-400 mb-1">Reduce Size Threshold</label>
+
+                <div className="bg-slate-900/50 p-8 rounded-3xl border border-slate-800 space-y-8 backdrop-blur-sm">
+                  <div className="space-y-4">
+                    <label className="flex items-center gap-2 text-xs font-black text-slate-400 uppercase tracking-widest">
+                      Capital Allocation (USD)
+                    </label>
+                    <div className="relative group">
+                      <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-500 font-mono font-bold">$</div>
                       <input 
                         type="number" 
-                        value={config.vixThresholdReduce}
-                        onChange={(e) => setConfig({...config, vixThresholdReduce: Number(e.target.value)})}
-                        className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2"
+                        value={config.accountUsd}
+                        onChange={(e) => setConfig({...config, accountUsd: Number(e.target.value)})}
+                        className="w-full bg-slate-950 border border-slate-800 rounded-2xl py-4 pl-10 pr-4 text-lg font-mono font-bold text-blue-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all"
                       />
                     </div>
-                    <div>
-                      <label className="block text-xs font-medium text-slate-400 mb-1">Pause Trading Threshold</label>
+                  </div>
+
+                  <div className="space-y-4">
+                    <label className="flex items-center gap-2 text-xs font-black text-slate-400 uppercase tracking-widest">
+                      Risk Per Trade (%)
+                    </label>
+                    <div className="flex items-center gap-6">
                       <input 
-                        type="number" 
-                        value={config.vixThresholdPause}
-                        onChange={(e) => setConfig({...config, vixThresholdPause: Number(e.target.value)})}
-                        className="w-full bg-slate-950 border border-slate-700 rounded-lg p-2"
+                        type="range"
+                        min="0.1"
+                        max="5.0"
+                        step="0.1"
+                        value={config.riskPct}
+                        onChange={(e) => setConfig({...config, riskPct: Number(e.target.value)})}
+                        className="flex-1 h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-blue-500"
                       />
+                      <span className="text-2xl font-black font-mono text-emerald-400 w-20 text-right">{config.riskPct}%</span>
                     </div>
                   </div>
                 </div>

@@ -1,6 +1,15 @@
 
+/**
+ * @file services/indicators.ts
+ * @description Mathematical implementation of technical indicators.
+ */
+
 import { Candle, Indicators } from '../types';
 
+/**
+ * Calculates the Exponential Moving Average.
+ * Formula: EMA = Price(t) * k + EMA(y) * (1 – k)
+ */
 export const calculateEMA = (data: number[], period: number): number => {
   if (data.length < period) return data[data.length - 1] || 0;
   const k = 2 / (period + 1);
@@ -11,6 +20,10 @@ export const calculateEMA = (data: number[], period: number): number => {
   return ema;
 };
 
+/**
+ * Calculates the Relative Strength Index.
+ * Measures the speed and change of price movements.
+ */
 export const calculateRSI = (data: number[], period: number = 14): number => {
   if (data.length <= period) return 50;
   let gains = 0;
@@ -30,6 +43,10 @@ export const calculateRSI = (data: number[], period: number = 14): number => {
   return 100 - (100 / (1 + rs));
 };
 
+/**
+ * Calculates the Average True Range.
+ * Used for volatility-based stop loss placement.
+ */
 export const calculateATR = (candles: Candle[], period: number = 14): number => {
   if (candles.length <= period) return 0;
   const trs: number[] = [];
@@ -45,6 +62,9 @@ export const calculateATR = (candles: Candle[], period: number = 14): number => 
   return trs.slice(-period).reduce((a, b) => a + b, 0) / period;
 };
 
+/**
+ * Batch calculation of all strategy indicators for a symbol.
+ */
 export const calculateIndicators = (candles: Candle[]): Indicators => {
   const closes = candles.map(c => c.close);
   const volumes = candles.map(c => c.volume);
