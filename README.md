@@ -1,36 +1,38 @@
-# 🦅 METALS SIGNAL BOT v1.0.4
+# 🦅 METALS SIGNAL BOT | PRO TERMINAL v1.1.0
 
-**High-Precision Market Intelligence & Signal Engine for Metals ETFs.**
-
----
-
-## 💎 Project Philosophy
-The Metals Signal Bot is engineered for professional-grade market analysis, specifically tailored for the **Metals Universe (GLD, SLV, GDX, COPX, DBC)**. It operates on a strict **15-minute candle-close** logic, adhering to "Fail-Closed" principles where data integrity is prioritized over signal frequency.
-
-## 🏗️ Technical Architecture
-- **Core Engine**: Deterministic state machine (WAIT → LONG → COOLDOWN).
-- **Verification Layer**: Real-time Google Search Grounding via **Gemini 3 Pro** to ensure "1000% real" data accuracy.
-- **Indicator Suite**: Incremental EMA, RSI, ATR, and Volume SMA calculators.
-- **UI/UX**: High-fidelity React dashboard with Tailwind CSS, Lucide icons, and Recharts.
-
-## 📈 Trading Strategy (The "Metal-Clad" Logic)
-The bot executes a Trend-Following Momentum strategy:
-1.  **Primary Trend**: Price > 200 EMA (Daily/15m alignment).
-2.  **Momentum Gate**: RSI(14) ≥ 50.
-3.  **Trigger**: Price > 20 EMA.
-4.  **Confirmation**: Volume > 20-period Volume SMA.
-5.  **Risk Management**: 2.5x ATR Stops | 4.0x ATR Targets | VIX-based Position Scaling.
-
-## 🛠️ Operating Model
-1.  **Market Hours**: Operates exclusively during NYSE session (9:30 AM - 4:00 PM ET).
-2.  **Execution**: Signals are generated for manual execution in retail brokers (Robinhood/Webull).
-3.  **Safety**: Integrated Circuit Breaker for API Rate Limits (429 handling).
-
-## 🚀 Quality Standards (Score 10+)
-- **Aesthetics**: Glassmorphic UI with optimized typography (Inter & JetBrains Mono).
-- **Performance**: Zero-lag state updates and memoized indicator calculations.
-- **Reliability**: Dual-layer verification (Grounding + integrity tagging).
-- **Explainability**: AI-driven technical commentary for every BUY trigger.
+**Institutional-Grade Market Intelligence Engine for Precious Metals ETFs.**
 
 ---
-*Developed for personal use. Treat data as hostile. Verify every fill.*
+
+## 💎 core_philosophy
+The Metals Signal Bot is a non-discretionary, long-only execution engine designed for the **Metals Universe (GLD, SLV, GDX, COPX, DBC)**. It operates on a "Trust No Data" architecture, utilizing **Gemini 3 Pro Grounding** to verify tick data against live web sources before committing to signal transitions.
+
+## 🏗️ technical_stack
+- **Logic Engine**: Deterministic Finite State Machine (FSM).
+- **Verification**: Google Search Grounding (Real-time financial cross-referencing).
+- **Analytics**: Optimized rolling-window indicators (EMA, RSI, ATR).
+- **UX**: Professional Glassmorphic Dashboard (Tailwind + Framer-style transitions).
+
+## 📈 strategy_specifications (The "Metal-Clad" Logic)
+The engine evaluates the 15-minute candle close against four primary gates:
+1.  **Trend Alignment**: `Close > EMA(200)` (Determines high-timeframe structural health).
+2.  **Momentum Gate**: `RSI(14) >= 50` (Ensures velocity is positive).
+3.  **Trigger Event**: `Close > EMA(20)` (Tactical entry timing).
+4.  **Volume Confirmation**: `Volume > SMA(Volume, 20)` (Validates institutional participation).
+
+## 🛡️ risk_management_framework
+- **Dynamic Stops**: 2.5x ATR (Volatility-adjusted exit).
+- **Profit Targets**: 4.0x ATR (Ensures positive expectancy > 1.6R).
+- **Regime Scaling**: 
+  - `VIX > 25`: Position size reduced by 50%.
+  - `VIX > 30`: New entries paused (Safety First).
+- **Time Stop**: Automatic signal exit at 15:45 ET (Preventing overnight gap risk).
+
+## 🚀 operational_runbook
+1.  **Initialization**: Verify `SYSTEM_HEARTBEAT` is green in the header.
+2.  **Verification**: Ensure "Live Verified" status is active (Indicates Gemini Grounding is functional).
+3.  **Execution**: When a **BUY** alert fires, execute manually in Robinhood/Webull.
+4.  **Auditing**: All trades are automatically logged to the Strategic Ledger (Journal) for weekly performance reviews.
+
+---
+*FOR PERSONAL USE ONLY. THE ENGINE IS THE AUTHORITY. VERIFY EVERY FILL.*
