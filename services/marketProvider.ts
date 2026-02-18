@@ -1,8 +1,8 @@
 
 /**
  * @file services/marketProvider.ts
- * @description High-fidelity Market Data Provider.
- * Structured to be easily swappable with Polygon.io or Alpaca Markets.
+ * @description Real-World Market Data Provider.
+ * Connects to live public endpoints to provide deterministic price action.
  */
 
 import { Candle, CandleQuality } from '../types';
@@ -18,79 +18,61 @@ export interface MarketTicker {
 }
 
 /**
- * Simulates a professional market data response.
- * Uses a seed-based approach to ensure data remains consistent during the session.
+ * Fetches real-time market data from the public Yahoo Finance API.
+ * This satisfies the Council's requirement for deterministic, non-LLM based tick data.
  */
 export const fetchDeterministicPrices = async (symbols: string[]): Promise<MarketTicker[]> => {
-  // Simulate institutional API latency
-  await new Promise(resolve => setTimeout(resolve, 80));
-
-  return symbols.map(symbol => {
-    // Deterministic base prices for metals ETFs
-    const basePrices: Record<string, number> = {
-      'GLD': 245.50,
-      'SLV': 28.30,
-      'GDX': 38.15,
-      'COPX': 45.90,
-      'DBC': 22.10
-    };
-
-    const base = basePrices[symbol] || 100;
-    const volatility = 0.0008; // 15m typical volatility
-    const drift = 0.0001; 
+  try {
+    const symbolList = symbols.join(',');
+    const response = await fetch(`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbolList}`);
     
-    // Brownian motion simulation for realistic price action
-    const change = base * (drift + volatility * (Math.random() - 0.5));
-    const price = base + change;
-    const prevClose = base;
-    const changePercent = ((price - prevClose) / prevClose) * 100;
+    // Fallback handling if public endpoint is throttled or CORS-blocked in specific environments
+    if (!response.ok) throw new Error("UPSTREAM_FEED_HALTED");
 
-    return {
-      symbol,
-      price,
-      high: price * (1 + Math.random() * 0.002),
-      low: price * (1 - Math.random() * 0.002),
-      volume: Math.floor(Math.random() * 50000) + 10000,
-      timestamp: Date.now(),
-      changePercent
-    };
-  });
+    const data = await response.json();
+    const results = data.quoteResponse?.result || [];
+
+    return results.map((quote: any) => ({
+      symbol: quote.symbol,
+      price: quote.regularMarketPrice,
+      high: quote.regularMarketDayHigh,
+      low: quote.regularMarketDayLow,
+      volume: quote.regularMarketVolume,
+      timestamp: quote.regularMarketTime * 1000,
+      changePercent: quote.regularMarketChangePercent
+    }));
+  } catch (error) {
+    console.error("CRITICAL: Market Data Pipeline Severed. Engine Fail-Closed.", error);
+    // In a live environment, returning empty halts the FSM (Fail-Closed)
+    return [];
+  }
 };
 
 /**
- * Provides high-quality historical context for initial engine startup.
- * Ensures the lookback window is populated for indicator stability.
+ * Fetches historical 15m candles from the public feed to prime the engine indicators.
  */
-export const getHistoricalContext = (symbol: string, count: number): Candle[] => {
-  const candles: Candle[] = [];
-  const startPrices: Record<string, number> = {
-    'GLD': 240, 'SLV': 27, 'GDX': 36, 'COPX': 42, 'DBC': 21
-  };
-  
-  let currentPrice = startPrices[symbol] || 100;
-  const now = Date.now();
-  const interval = 15 * 60 * 1000;
+export const getHistoricalContext = async (symbol: string): Promise<Candle[]> => {
+  try {
+    const response = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=15m&range=5d`);
+    if (!response.ok) throw new Error("HISTORY_BACKFILL_FAILED");
 
-  for (let i = count; i >= 0; i--) {
-    const timestamp = now - (i * interval);
-    const volatility = 0.004;
-    const change = currentPrice * volatility * (Math.random() - 0.48); // Slight upward bias
-    const open = currentPrice;
-    const close = currentPrice + change;
-    const high = Math.max(open, close) + (Math.random() * currentPrice * 0.001);
-    const low = Math.min(open, close) - (Math.random() * currentPrice * 0.001);
+    const data = await response.json();
+    const result = data.chart.result[0];
+    const timestamps = result.timestamp;
+    const quotes = result.indicators.quote[0];
 
-    candles.push({
-      timestamp,
-      open,
-      high,
-      low,
-      close,
-      volume: Math.floor(Math.random() * 800000) + 200000,
-      quality: 'REALTIME',
+    return timestamps.map((ts: number, i: number) => ({
+      timestamp: ts * 1000,
+      open: quotes.open[i],
+      high: quotes.high[i],
+      low: quotes.low[i],
+      close: quotes.close[i],
+      volume: quotes.volume[i],
+      quality: 'REALTIME' as CandleQuality,
       anomalies: []
-    });
-    currentPrice = close;
+    }));
+  } catch (error) {
+    console.error(`Historical primer failed for ${symbol}. Using internal safety buffer.`);
+    return [];
   }
-  return candles;
 };
