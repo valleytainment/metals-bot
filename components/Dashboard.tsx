@@ -2,13 +2,13 @@
 /**
  * @file components/Dashboard.tsx
  * @description Primary command center for the Bot.
- * Now displays live grounded data and verified source links for transparency.
+ * Displays live grounded data and verified source links.
  */
 
 import React from 'react';
 import { Signal, Candle, BotState } from '../types';
 import SignalCard from './SignalCard';
-import { ArrowUpRight, ArrowDownRight, Activity, ExternalLink, ShieldCheck } from 'lucide-react';
+import { ArrowUpRight, ArrowDownRight, Activity, ExternalLink, ShieldCheck, Clock } from 'lucide-react';
 
 interface DashboardProps {
   watchlist: string[];
@@ -16,18 +16,23 @@ interface DashboardProps {
   marketData: Record<string, Candle[]>;
   botStates: Record<string, BotState>;
   verifiedData?: any[]; // Data from Google Search Grounding
+  isAiEnabled: boolean;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ watchlist, signals, marketData, botStates, verifiedData }) => {
+const Dashboard: React.FC<DashboardProps> = ({ watchlist, signals, marketData, botStates, verifiedData, isAiEnabled }) => {
+  const isStale = verifiedData?.some(d => d.error === 'QUOTA_EXHAUSTED');
+
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
       
       {/* SECTION: REAL-TIME PRICE BOARD (GROUNDED) */}
       <section className="bg-slate-900/40 border border-slate-800 rounded-2xl p-6 backdrop-blur-sm relative overflow-hidden">
         <div className="absolute top-0 right-0 p-4">
-          <div className="flex items-center gap-2 px-3 py-1 bg-emerald-500/10 border border-emerald-500/20 rounded-full">
-            <ShieldCheck size={12} className="text-emerald-500" />
-            <span className="text-[10px] font-black text-emerald-500 uppercase tracking-widest">Live Verified</span>
+          <div className={`flex items-center gap-2 px-3 py-1 rounded-full border ${isStale ? 'bg-orange-500/10 border-orange-500/20' : 'bg-emerald-500/10 border-emerald-500/20'}`}>
+            {isStale ? <Clock size={12} className="text-orange-500" /> : <ShieldCheck size={12} className="text-emerald-500" />}
+            <span className={`text-[10px] font-black uppercase tracking-widest ${isStale ? 'text-orange-500' : 'text-emerald-500'}`}>
+              {isStale ? 'Stale Data' : 'Live Verified'}
+            </span>
           </div>
         </div>
 
@@ -59,7 +64,7 @@ const Dashboard: React.FC<DashboardProps> = ({ watchlist, signals, marketData, b
           })}
         </div>
 
-        {/* SECTION: VERIFIED SOURCES (MANDATORY PER GUIDELINES) */}
+        {/* SECTION: VERIFIED SOURCES */}
         {verifiedData && verifiedData.length > 0 && (
           <div className="pt-4 border-t border-slate-800">
             <span className="text-[9px] font-black text-slate-600 uppercase tracking-[0.2em] mb-3 block">Data Integrity Verification Sources</span>
@@ -95,6 +100,7 @@ const Dashboard: React.FC<DashboardProps> = ({ watchlist, signals, marketData, b
               signal={signal} 
               candles={candles}
               state={state}
+              isAiEnabled={isAiEnabled}
             />
           );
         })}

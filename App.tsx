@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   WATCHLIST, 
   DEFAULT_CONFIG 
@@ -8,8 +8,7 @@ import {
   Candle, 
   Signal, 
   BotState, 
-  AppConfig,
-  JournalTrade 
+  AppConfig 
 } from './types';
 import { 
   generateMockCandles, 
@@ -22,6 +21,7 @@ import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import BacktestView from './components/BacktestView';
 import JournalView from './components/JournalView';
+import { Sparkles } from 'lucide-react';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'backtest' | 'journal' | 'settings'>('dashboard');
@@ -41,67 +41,66 @@ const App: React.FC = () => {
   });
   const [vix, setVix] = useState(18);
   const [isRunning, setIsRunning] = useState(true);
+  
+  // Adaptive Polling State
+  const [pollInterval, setPollInterval] = useState(120000); // Start at 2m for heavy Grounding
+  const [quotaTripped, setQuotaTripped] = useState(false);
 
-  // Initialize data with deep historical context
+  // Initialize data
   useEffect(() => {
     const initialData: Record<string, Candle[]> = {};
     WATCHLIST.forEach(symbol => {
-      initialData[symbol] = generateMockCandles(symbol, 400); // More history for 200 EMA
+      initialData[symbol] = generateMockCandles(symbol, 400);
     });
     setMarketData(initialData);
   }, []);
 
-  // Verification Loop: Fetches "1000% real" data via Google Search Grounding
+  // Verification Loop with Adaptive Polling & Circuit Breaker
   useEffect(() => {
     if (!isRunning) return;
 
     const performVerification = async () => {
       const liveStats = await fetchVerifiedMarketStats(WATCHLIST);
+      
       if (liveStats.length > 0) {
-        setVerifiedPrices(liveStats);
+        // Check for Quota Error in results
+        const isExhausted = liveStats.some(s => s.error === 'QUOTA_EXHAUSTED');
         
-        // Sync verified prices back into candle history
-        setMarketData(prev => {
-          const next = { ...prev };
-          liveStats.forEach(stat => {
-            const candles = next[stat.symbol];
-            if (!candles) return;
-            const last = candles[candles.length - 1];
-            // Only update if price is significantly different or time has passed
-            const newCandle: Candle = {
-              ...last,
-              timestamp: Date.now(),
-              close: stat.price || last.close,
-              high: stat.high || last.high,
-              low: stat.low || last.low,
-              quality: 'REALTIME',
-              anomalies: []
-            };
-            next[stat.symbol] = [...candles.slice(1), newCandle];
+        if (isExhausted) {
+          setQuotaTripped(true);
+          // Scale back interval significantly (Adaptive Backoff)
+          setPollInterval(prev => Math.min(prev * 1.5, 600000)); // Max 10 mins
+        } else {
+          setQuotaTripped(false);
+          setVerifiedPrices(liveStats);
+          
+          setMarketData(prev => {
+            const next = { ...prev };
+            liveStats.forEach(stat => {
+              const candles = next[stat.symbol];
+              if (!candles) return;
+              const last = candles[candles.length - 1];
+              const newCandle: Candle = {
+                ...last,
+                timestamp: Date.now(),
+                close: stat.price || last.close,
+                high: stat.high || last.high,
+                low: stat.low || last.low,
+                quality: 'REALTIME',
+                anomalies: []
+              };
+              next[stat.symbol] = [...candles.slice(1), newCandle];
+            });
+            return next;
           });
-          return next;
-        });
+        }
       }
     };
 
-    // Initial fetch
     performVerification();
-
-    // Verify every 60 seconds to respect API limits while staying "Real-Time"
-    const verifyId = setInterval(performVerification, 60000);
+    const verifyId = setInterval(performVerification, pollInterval);
     return () => clearInterval(verifyId);
-  }, [isRunning]);
-
-  // Secondary update loop for VIX and synthetic smoothing between verifications
-  useEffect(() => {
-    if (!isRunning) return;
-
-    const intervalId = setInterval(() => {
-      setVix(fetchLatestVix());
-    }, 5000);
-
-    return () => clearInterval(intervalId);
-  }, [isRunning]);
+  }, [isRunning, pollInterval]);
 
   // Evaluate Signals
   useEffect(() => {
@@ -136,6 +135,13 @@ const App: React.FC = () => {
           config={config}
         />
         
+        {quotaTripped && (
+          <div className="bg-orange-500/10 border-b border-orange-500/20 px-8 py-2 flex items-center justify-between text-[10px] font-bold text-orange-400 uppercase tracking-widest">
+            <span>Quota Exhausted: Live Grounding Paused (Scaling Interval to {Math.round(pollInterval/1000)}s)</span>
+            <span className="opacity-50">Circuit Breaker Active</span>
+          </div>
+        )}
+
         <main className="flex-1 overflow-y-auto p-8 custom-scrollbar">
           {activeTab === 'dashboard' && (
             <Dashboard 
@@ -144,6 +150,7 @@ const App: React.FC = () => {
               marketData={marketData}
               botStates={botStates}
               verifiedData={verifiedPrices}
+              isAiEnabled={config.isAiEnabled}
             />
           )}
           
@@ -156,7 +163,26 @@ const App: React.FC = () => {
                   <p className="text-slate-500 text-sm font-medium mt-1">Configure risk management and capital allocation logic.</p>
                 </div>
 
-                <div className="bg-slate-900/50 p-8 rounded-3xl border border-slate-800 space-y-8 backdrop-blur-sm">
+                <div className="bg-slate-900/50 p-8 rounded-3xl border border-slate-800 space-y-8 backdrop-blur-sm shadow-xl">
+                  {/* AI Toggle Section */}
+                  <div className="flex items-center justify-between p-4 bg-slate-950/40 rounded-2xl border border-slate-800/50">
+                    <div className="flex items-center gap-4">
+                      <div className={`p-3 rounded-xl ${config.isAiEnabled ? 'bg-blue-600/20 text-blue-400' : 'bg-slate-800 text-slate-500'} transition-colors`}>
+                        <Sparkles size={20} />
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-black text-slate-100 uppercase tracking-wide">Gemini AI Analysis</h4>
+                        <p className="text-[10px] text-slate-500 font-medium">Real-time technical commentary and trade thesis.</p>
+                      </div>
+                    </div>
+                    <button 
+                      onClick={() => setConfig({...config, isAiEnabled: !config.isAiEnabled})}
+                      className={`relative w-14 h-7 rounded-full transition-colors ${config.isAiEnabled ? 'bg-blue-600' : 'bg-slate-800'}`}
+                    >
+                      <div className={`absolute top-1 left-1 w-5 h-5 bg-white rounded-full transition-transform ${config.isAiEnabled ? 'translate-x-7' : 'translate-x-0'}`} />
+                    </button>
+                  </div>
+
                   <div className="space-y-4">
                     <label className="flex items-center gap-2 text-xs font-black text-slate-400 uppercase tracking-widest">
                       Capital Allocation (USD)

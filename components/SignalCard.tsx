@@ -9,7 +9,7 @@ import React, { useState, useEffect } from 'react';
 import { Signal, Candle, BotState } from '../types';
 import TradingChart from './TradingChart';
 import { getSignalCommentary } from '../services/geminiService';
-import { Info, AlertTriangle, ShieldCheck, CheckCircle2, XCircle, TrendingUp, Gauge } from 'lucide-react';
+import { Info, AlertTriangle, ShieldCheck, CheckCircle2, XCircle, TrendingUp, Gauge, Sparkles } from 'lucide-react';
 import { calculateIndicators } from '../services/indicators';
 
 interface SignalCardProps {
@@ -17,13 +17,19 @@ interface SignalCardProps {
   signal: Signal | undefined;
   candles: Candle[];
   state: BotState;
+  isAiEnabled: boolean;
 }
 
-const SignalCard: React.FC<SignalCardProps> = ({ symbol, signal, candles, state }) => {
+const SignalCard: React.FC<SignalCardProps> = ({ symbol, signal, candles, state, isAiEnabled }) => {
   const [commentary, setCommentary] = useState<string>("Initializing analysis...");
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
+    if (!isAiEnabled) {
+      setCommentary("AI commentary disabled in settings.");
+      return;
+    }
+
     if (signal && signal.action === 'BUY') {
       setIsLoading(true);
       getSignalCommentary(signal, candles).then(res => {
@@ -33,7 +39,7 @@ const SignalCard: React.FC<SignalCardProps> = ({ symbol, signal, candles, state 
     } else {
       setCommentary(signal?.action === 'WAIT' ? "Scanning for high-probability setups..." : "Monitoring active position.");
     }
-  }, [signal?.id]);
+  }, [signal?.id, isAiEnabled]);
 
   const indicators = candles.length >= 200 ? calculateIndicators(candles) : null;
   const latest = candles[candles.length - 1];
@@ -154,11 +160,11 @@ const SignalCard: React.FC<SignalCardProps> = ({ symbol, signal, candles, state 
         {/* AI COMMENTARY */}
         <div className="p-5 bg-slate-950/50 mt-auto border-t border-slate-800">
           <div className="flex items-start gap-3">
-            <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center shrink-0 border border-blue-500/20">
-              <TrendingUp size={16} className="text-blue-500" />
+            <div className={`w-8 h-8 rounded-lg ${isAiEnabled ? 'bg-blue-500/10 border-blue-500/20' : 'bg-slate-800 border-slate-700'} flex items-center justify-center shrink-0 border`}>
+              {isAiEnabled ? <Sparkles size={16} className="text-blue-500" /> : <TrendingUp size={16} className="text-slate-600" />}
             </div>
             <div className="space-y-2 flex-1">
-              <p className="text-sm text-slate-400 leading-relaxed italic line-clamp-2">
+              <p className={`text-sm leading-relaxed italic line-clamp-2 ${isAiEnabled ? 'text-slate-400' : 'text-slate-600'}`}>
                 {isLoading ? "Generating technical thesis..." : `"${commentary}"`}
               </p>
               <div className="flex flex-wrap gap-1.5">

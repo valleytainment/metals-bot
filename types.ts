@@ -91,4 +91,6 @@ export interface AppConfig {
   vixThresholdPause: number;
   /** Array of symbols to monitor */
   watchlist: string[];
+  /** Toggle for Gemini AI insights */
+  isAiEnabled: boolean;
 }
