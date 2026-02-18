@@ -1,18 +1,19 @@
 
 import React, { useState, useEffect } from 'react';
+// Fix: Added missing Sparkles icon import
+import { Sparkles } from 'lucide-react';
 import { WATCHLIST, DEFAULT_CONFIG } from './constants';
-import { Candle, Signal, BotState, AppConfig, JournalTrade } from './types';
+import { Candle, Signal, BotState, AppConfig, JournalTrade, MacroCheck } from './types';
 import { fetchLatestVix } from './services/dataModule';
 import { evaluateSignal } from './services/engine';
 import { fetchDeterministicPrices, getHistoricalContext, MarketTicker } from './services/marketProvider';
-import { validateMacroThesis, MacroCheck } from './services/macroService';
+import { validateMacroThesis } from './services/macroService';
 import { saveTrade } from './services/journalService';
 import Dashboard from './components/Dashboard';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import BacktestView from './components/BacktestView';
 import JournalView from './components/JournalView';
-import { Sparkles, ShieldAlert } from 'lucide-react';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'backtest' | 'journal' | 'settings'>('dashboard');
@@ -34,7 +35,7 @@ const App: React.FC = () => {
   const [isRunning, setIsRunning] = useState(true);
   const [macroStatus, setMacroStatus] = useState<MacroCheck | null>(null);
 
-  // Initialize Historical Context (Deterministic)
+  // 1. Initialize Historical Context (Static)
   useEffect(() => {
     const initialData: Record<string, Candle[]> = {};
     WATCHLIST.forEach(symbol => {
@@ -43,10 +44,9 @@ const App: React.FC = () => {
     setMarketData(initialData);
   }, []);
 
-  // DETERMINISTIC PRICE FEED LOOP (Sub-second simulation)
+  // 2. High-Frequency Ticker Loop (Deterministic 5s)
   useEffect(() => {
     if (!isRunning) return;
-
     const tick = async () => {
       const prices = await fetchDeterministicPrices(WATCHLIST);
       setLatestTickers(prices);
@@ -55,10 +55,9 @@ const App: React.FC = () => {
       setMarketData(prev => {
         const next = { ...prev };
         prices.forEach(ticker => {
-          const history = next[ticker.symbol];
-          if (!history) return;
+          const history = next[ticker.symbol] || [];
+          if (history.length === 0) return;
           const last = history[history.length - 1];
-          // Simple O(1) rolling update simulation for the terminal UI
           const newCandle: Candle = {
             ...last,
             timestamp: ticker.timestamp,
@@ -72,43 +71,35 @@ const App: React.FC = () => {
         return next;
       });
     };
-
-    const intervalId = setInterval(tick, 5000); // 5s Ticks for UI fluidity
-    return () => clearInterval(intervalId);
+    const id = setInterval(tick, 5000);
+    return () => clearInterval(id);
   }, [isRunning]);
 
-  // AI MACRO VALIDATION LOOP (Lower frequency grounding)
+  // 3. Low-Frequency Macro Validation Loop (AI Grounding 5m)
   useEffect(() => {
     if (!isRunning || !config.isAiEnabled) return;
-
     const checkMacro = async () => {
-      const result = await validateMacroThesis(WATCHLIST);
-      setMacroStatus(result);
+      const res = await validateMacroThesis(WATCHLIST);
+      setMacroStatus(res);
     };
-
     checkMacro();
-    const intervalId = setInterval(checkMacro, 300000); // Check every 5 mins
-    return () => clearInterval(intervalId);
+    const id = setInterval(checkMacro, 300000);
+    return () => clearInterval(id);
   }, [isRunning, config.isAiEnabled]);
 
-  // SIGNAL EVALUATION & PERSISTENCE
+  // 4. Tactical Evaluation & Persistence
   useEffect(() => {
     WATCHLIST.forEach(symbol => {
       const candles = marketData[symbol];
       if (!candles || candles.length < 250) return;
 
       const { signal, newState, newCooldown } = evaluateSignal(
-        symbol,
-        candles,
-        vix,
-        botStates[symbol],
-        cooldowns[symbol],
-        config
+        symbol, candles, vix, botStates[symbol], cooldowns[symbol], config
       );
 
-      // Transition to LONG: Log the trade automatically
+      // Forensic Logging: Commit to Journal on LONG transition
       if (botStates[symbol] === 'WAIT' && newState === 'LONG' && signal.action === 'BUY') {
-        const trade: JournalTrade = {
+        saveTrade({
           id: signal.id,
           symbol,
           openedTs: Date.now(),
@@ -116,8 +107,7 @@ const App: React.FC = () => {
           shares: signal.shares || 0,
           stop: signal.stop || 0,
           target: signal.target || 0
-        };
-        saveTrade(trade);
+        });
       }
 
       setSignals(prev => ({ ...prev, [symbol]: signal }));
@@ -131,23 +121,8 @@ const App: React.FC = () => {
       <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
       
       <div className="flex-1 flex flex-col overflow-hidden">
-        <Header 
-          vix={vix} 
-          isRunning={isRunning} 
-          setIsRunning={setIsRunning} 
-          config={config}
-        />
+        <Header vix={vix} isRunning={isRunning} setIsRunning={setIsRunning} config={config} />
         
-        {macroStatus && !macroStatus.isSafe && (
-          <div className="bg-rose-500/10 border-b border-rose-500/20 px-8 py-2 flex items-center justify-between text-[10px] font-black text-rose-500 uppercase tracking-widest animate-pulse">
-            <div className="flex items-center gap-2">
-              <ShieldAlert size={14} />
-              <span>AI Macro Alert: {macroStatus.reason}</span>
-            </div>
-            <span className="opacity-50">Grounding Source: {macroStatus.sources[0]?.title || 'Financial News'}</span>
-          </div>
-        )}
-
         <main className="flex-1 overflow-y-auto p-10 custom-scrollbar">
           {activeTab === 'dashboard' && (
             <Dashboard 
@@ -155,11 +130,9 @@ const App: React.FC = () => {
               signals={signals} 
               marketData={marketData}
               botStates={botStates}
+              tickers={latestTickers}
+              macroStatus={macroStatus}
               isAiEnabled={config.isAiEnabled}
-              verifiedData={latestTickers.map(t => ({
-                ...t,
-                sources: macroStatus?.sources || []
-              }))}
             />
           )}
           
@@ -167,26 +140,26 @@ const App: React.FC = () => {
           {activeTab === 'journal' && <JournalView />}
           {activeTab === 'settings' && (
              <div className="max-w-2xl mx-auto space-y-10 animate-in fade-in zoom-in-95 duration-500">
-                <div>
-                  <h2 className="text-3xl font-black tracking-tighter text-white">Engine Configuration</h2>
-                  <p className="text-slate-500 text-sm font-medium mt-1">Institutional-grade risk and intelligence parameters.</p>
-                </div>
+                <header>
+                  <h2 className="text-3xl font-black tracking-tighter text-white">Institutional Config</h2>
+                  <p className="text-slate-500 text-sm font-medium mt-1">Refine capital allocation and AI macro thresholds.</p>
+                </header>
 
                 <div className="bg-slate-900/50 p-10 rounded-[2.5rem] border border-slate-800/60 space-y-10 backdrop-blur-md shadow-2xl">
-                  {/* AI Toggle Section */}
                   <div className="flex items-center justify-between p-6 bg-slate-950/40 rounded-3xl border border-slate-800/40">
                     <div className="flex items-center gap-5">
-                      <div className={`p-4 rounded-2xl ${config.isAiEnabled ? 'bg-blue-600/10 text-blue-400 border border-blue-500/20' : 'bg-slate-800/40 text-slate-500 border border-slate-700/40'} transition-all`}>
+                      <div className={`p-4 rounded-2xl border transition-all ${config.isAiEnabled ? 'bg-blue-600/10 text-blue-400 border-blue-500/20 shadow-lg shadow-blue-500/5' : 'bg-slate-800/40 text-slate-500 border-slate-700/40'}`}>
+                        {/* Fix: Using Sparkles icon which is now imported */}
                         <Sparkles size={24} />
                       </div>
                       <div>
-                        <h4 className="text-sm font-black text-white uppercase tracking-wider">Macro Grounding Thesis</h4>
-                        <p className="text-[10px] text-slate-500 font-medium mt-1">Enable Gemini 3 Pro to validate setups against live world news.</p>
+                        <h4 className="text-sm font-black text-white uppercase tracking-wider">AI Thesis Grounding</h4>
+                        <p className="text-[10px] text-slate-500 font-medium mt-1">Consult Gemini 3 Pro for world-event risk validation.</p>
                       </div>
                     </div>
                     <button 
                       onClick={() => setConfig({...config, isAiEnabled: !config.isAiEnabled})}
-                      className={`relative w-16 h-8 rounded-full transition-all duration-300 ${config.isAiEnabled ? 'bg-blue-600' : 'bg-slate-800'}`}
+                      className={`relative w-16 h-8 rounded-full transition-all duration-300 ${config.isAiEnabled ? 'bg-blue-600 shadow-lg shadow-blue-600/20' : 'bg-slate-800'}`}
                     >
                       <div className={`absolute top-1 left-1 w-6 h-6 bg-white rounded-full shadow-lg transition-transform duration-300 ${config.isAiEnabled ? 'translate-x-8' : 'translate-x-0'}`} />
                     </button>
@@ -194,22 +167,21 @@ const App: React.FC = () => {
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     <div className="space-y-4">
-                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Operating Capital (USD)</label>
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Available Equity (USD)</label>
                       <input 
-                        type="number" 
-                        value={config.accountUsd}
+                        type="number" value={config.accountUsd}
                         onChange={(e) => setConfig({...config, accountUsd: Number(e.target.value)})}
-                        className="w-full bg-slate-950/60 border border-slate-800/60 rounded-2xl py-5 px-6 text-xl font-mono font-black text-blue-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 outline-none transition-all"
+                        className="w-full bg-slate-950/60 border border-slate-800/60 rounded-2xl py-5 px-6 text-xl font-mono font-black text-blue-400 focus:border-blue-500 outline-none transition-all"
                       />
                     </div>
                     <div className="space-y-4">
-                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Risk Allocation (%)</label>
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Risk Unit (%)</label>
                       <div className="bg-slate-950/60 border border-slate-800/60 rounded-2xl py-5 px-6 flex items-center justify-between">
                         <input 
                           type="range" min="0.1" max="5.0" step="0.1"
                           value={config.riskPct}
                           onChange={(e) => setConfig({...config, riskPct: Number(e.target.value)})}
-                          className="flex-1 mr-6 h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                          className="flex-1 mr-6 h-1.5 bg-slate-800 rounded-full appearance-none cursor-pointer accent-blue-500"
                         />
                         <span className="text-xl font-black font-mono text-emerald-400">{config.riskPct}%</span>
                       </div>
