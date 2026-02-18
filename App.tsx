@@ -1,8 +1,8 @@
 
-import React, { useState, useEffect } from 'react';
-import { Sparkles, ShieldAlert, Globe, Radio } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Sparkles, Radio, Database, Bell, Volume2, ShieldCheck } from 'lucide-react';
 import { WATCHLIST, DEFAULT_CONFIG } from './constants';
-import { Candle, Signal, BotState, AppConfig, JournalTrade, MacroCheck } from './types';
+import { Candle, Signal, BotState, AppConfig, MacroCheck } from './types';
 import { fetchLatestVix } from './services/dataModule';
 import { evaluateSignal } from './services/engine';
 import { fetchDeterministicPrices, getHistoricalContext, MarketTicker } from './services/marketProvider';
@@ -34,10 +34,42 @@ const App: React.FC = () => {
   const [isRunning, setIsRunning] = useState(true);
   const [macroStatus, setMacroStatus] = useState<MacroCheck | null>(null);
   const [isPrimed, setIsPrimed] = useState(false);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
 
-  // 1. ASYNC ENGINE WARMUP: Fetch Real Historical Data
+  // --- ZERO-COST ALERT SYSTEM ---
+  const playAlertSound = useCallback((type: 'entry' | 'exit') => {
+    try {
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = type === 'entry' ? 'sine' : 'square';
+      osc.frequency.setValueAtTime(type === 'entry' ? 880 : 440, audioCtx.currentTime);
+      gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.5);
+    } catch (e) {
+      console.warn("Audio Context blocked by browser policy.");
+    }
+  }, []);
+
+  const triggerNotification = useCallback((title: string, body: string) => {
+    if (Notification.permission === 'granted') {
+      new Notification(title, { body, icon: 'https://cdn-icons-png.flaticon.com/512/2533/2533031.png' });
+    }
+  }, []);
+
+  // 1. SYSTEM INITIALIZATION
   useEffect(() => {
     const warmup = async () => {
+      // Request Notification Permission
+      if ("Notification" in window) {
+        const permission = await Notification.requestPermission();
+        setNotificationsEnabled(permission === 'granted');
+      }
+
       const initialData: Record<string, Candle[]> = {};
       await Promise.all(WATCHLIST.map(async (symbol) => {
         const history = await getHistoricalContext(symbol);
@@ -49,22 +81,17 @@ const App: React.FC = () => {
     warmup();
   }, []);
 
-  // 2. LIVE DETERMINISTIC TICK LOOP (5s Resolution)
+  // 2. LIVE DATA & SIGNAL LOOP
   useEffect(() => {
     if (!isRunning || !isPrimed) return;
     
     const tick = async () => {
       const prices = await fetchDeterministicPrices(WATCHLIST);
-      
-      // FAIL-CLOSED GATE: Halt processing if real data feed is lost
-      if (prices.length === 0) {
-        console.warn("RE-SYNCING: Live feed interrupted. Holding previous state.");
-        return;
-      }
+      if (prices.length === 0) return;
 
       setLatestTickers(prices);
       setVix(fetchLatestVix());
-
+      
       setMarketData(prev => {
         const next = { ...prev };
         prices.forEach(ticker => {
@@ -89,7 +116,7 @@ const App: React.FC = () => {
     return () => clearInterval(id);
   }, [isRunning, isPrimed]);
 
-  // 3. ASYNC MACRO THESIS VALIDATION (5m Cycle)
+  // 3. AI MACRO GROUNDING (Gemini Flash Tier)
   useEffect(() => {
     if (!isRunning || !config.isAiEnabled || !isPrimed) return;
     const checkMacro = async () => {
@@ -101,7 +128,9 @@ const App: React.FC = () => {
     return () => clearInterval(id);
   }, [isRunning, config.isAiEnabled, isPrimed]);
 
-  // 4. SIGNAL ORCHESTRATION & LEDGER COMMITS
+  // 4. SIGNAL ORCHESTRATION & ALERTS
+  // CRITICAL FIX: To prevent infinite update loops, we exclude botStates and cooldowns from the dependency array.
+  // Instead, we access their values via the component's render closure, which is updated every time marketData ticks.
   useEffect(() => {
     if (!isPrimed) return;
 
@@ -109,12 +138,19 @@ const App: React.FC = () => {
       const candles = marketData[symbol];
       if (!candles || candles.length < 250) return;
 
+      // Access latest available states from closure (triggered by marketData tick)
+      const currentBotState = botStates[symbol];
+      const currentCooldown = cooldowns[symbol];
+
       const { signal, newState, newCooldown } = evaluateSignal(
-        symbol, candles, vix, botStates[symbol], cooldowns[symbol], config
+        symbol, candles, vix, currentBotState, currentCooldown, config
       );
 
-      // ASYNC PERSISTENCE: Record transitions to LONG in the ledger
-      if (botStates[symbol] === 'WAIT' && newState === 'LONG' && signal.action === 'BUY') {
+      // ALERT TRIGGER: Transition to LONG
+      if (currentBotState === 'WAIT' && newState === 'LONG' && signal.action === 'BUY') {
+        playAlertSound('entry');
+        triggerNotification(`🚀 ENTRY: ${symbol}`, `Action: BUY @ $${signal.price.toFixed(2)} | Target: $${signal.target?.toFixed(2)}`);
+        
         saveTrade({
           id: signal.id,
           symbol,
@@ -126,11 +162,20 @@ const App: React.FC = () => {
         });
       }
 
+      // Update signal state
       setSignals(prev => ({ ...prev, [symbol]: signal }));
-      setBotStates(prev => ({ ...prev, [symbol]: newState }));
-      setCooldowns(prev => ({ ...prev, [symbol]: newCooldown }));
+
+      // Update bot state if changed
+      if (newState !== currentBotState) {
+        setBotStates(prev => ({ ...prev, [symbol]: newState }));
+      }
+
+      // Update cooldown if changed
+      if (newCooldown !== currentCooldown) {
+        setCooldowns(prev => ({ ...prev, [symbol]: newCooldown }));
+      }
     });
-  }, [marketData, vix, config, isPrimed]);
+  }, [marketData, vix, config, isPrimed, playAlertSound, triggerNotification]);
 
   return (
     <div className="flex h-screen bg-[#020617] font-sans selection:bg-blue-500/30">
@@ -139,26 +184,42 @@ const App: React.FC = () => {
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header vix={vix} isRunning={isRunning} setIsRunning={setIsRunning} config={config} />
         
-        {/* NETWORK STATUS OVERLAY */}
-        <div className="bg-slate-900/40 border-b border-slate-800/40 px-10 py-1.5 flex items-center justify-between">
-           <div className="flex items-center gap-6">
+        {/* ZERO-COST STATUS TELEMETRY */}
+        <div className="bg-slate-900/40 border-b border-slate-800/40 px-10 py-2 flex items-center justify-between">
+           <div className="flex items-center gap-8">
              <div className="flex items-center gap-2">
                <Radio size={12} className={latestTickers.length > 0 ? "text-emerald-500 animate-pulse" : "text-rose-500"} />
-               <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Feed: Yahoo Finance Real-time</span>
+               <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
+                 Feed: Zero-Cost Deterministic
+               </span>
              </div>
-             <div className="flex items-center gap-2 border-l border-slate-800 pl-6">
-               <Globe size={12} className={macroStatus ? "text-blue-500" : "text-slate-700"} />
-               <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Macro Thesis: Grounded</span>
+             <div className="flex items-center gap-2 border-l border-slate-800 pl-8">
+               <Bell size={12} className={notificationsEnabled ? "text-blue-500" : "text-slate-700"} />
+               <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
+                 Alerts: {notificationsEnabled ? 'Active' : 'Muted'}
+               </span>
+             </div>
+             <div className="flex items-center gap-2 border-l border-slate-800 pl-8">
+               <ShieldCheck size={12} className="text-emerald-500" />
+               <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
+                 Personal Edition v2.0
+               </span>
              </div>
            </div>
-           {!isPrimed && <span className="text-[9px] font-black text-amber-500 uppercase tracking-widest">Priming Historical Context...</span>}
+           {!isPrimed && <span className="text-[9px] font-black text-amber-500 uppercase tracking-widest animate-pulse">Syncing Global Vectors...</span>}
         </div>
 
         <main className="flex-1 overflow-y-auto p-10 custom-scrollbar">
           {!isPrimed ? (
-            <div className="flex flex-col items-center justify-center h-full space-y-4 opacity-50">
-               <div className="w-12 h-12 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-               <p className="text-xs font-black uppercase tracking-widest text-slate-500">Synchronizing Live Financial Vectors</p>
+            <div className="flex flex-col items-center justify-center h-full space-y-6">
+               <div className="relative">
+                 <div className="w-16 h-16 border-2 border-blue-500/10 rounded-full" />
+                 <div className="absolute inset-0 w-16 h-16 border-t-2 border-blue-500 rounded-full animate-spin" />
+               </div>
+               <div className="text-center">
+                 <p className="text-xs font-black uppercase tracking-[0.4em] text-white mb-2">Initializing Ledger</p>
+                 <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">Cold Start: Populating Technical Context</p>
+               </div>
             </div>
           ) : (
             <>
@@ -178,8 +239,8 @@ const App: React.FC = () => {
               {activeTab === 'settings' && (
                  <div className="max-w-2xl mx-auto space-y-10 animate-in fade-in zoom-in-95 duration-500">
                     <header>
-                      <h2 className="text-3xl font-black tracking-tighter text-white uppercase">Operational Hub</h2>
-                      <p className="text-slate-500 text-sm font-medium mt-1">Institutional-grade risk guardrails and AI thesis control.</p>
+                      <h2 className="text-3xl font-black tracking-tighter text-white uppercase italic">Zero-Cost Settings</h2>
+                      <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest mt-1">Authorized for personal manual execution only.</p>
                     </header>
 
                     <div className="bg-slate-900/50 p-10 rounded-[2.5rem] border border-slate-800/60 space-y-10 backdrop-blur-md shadow-2xl">
@@ -189,21 +250,21 @@ const App: React.FC = () => {
                             <Sparkles size={24} />
                           </div>
                           <div>
-                            <h4 className="text-sm font-black text-white uppercase tracking-wider">Strategic Grounding</h4>
-                            <p className="text-[10px] text-slate-500 font-medium mt-1">Cross-reference technical setups with live geopolitical news.</p>
+                            <h4 className="text-sm font-black text-white uppercase tracking-wider">AI Thesis (Gemini Flash)</h4>
+                            <p className="text-[10px] text-slate-500 font-medium mt-1">Grounds signals against free web search news cycles.</p>
                           </div>
                         </div>
                         <button 
                           onClick={() => setConfig({...config, isAiEnabled: !config.isAiEnabled})}
-                          className={`relative w-16 h-8 rounded-full transition-all duration-300 ${config.isAiEnabled ? 'bg-blue-600 shadow-lg shadow-blue-600/20' : 'bg-slate-800'}`}
+                          className={`relative w-16 h-8 rounded-full transition-all duration-300 ${config.isAiEnabled ? 'bg-blue-600' : 'bg-slate-800'}`}
                         >
-                          <div className={`absolute top-1 left-1 w-6 h-6 bg-white rounded-full shadow-lg transition-transform duration-300 ${config.isAiEnabled ? 'translate-x-8' : 'translate-x-0'}`} />
+                          <div className={`absolute top-1 left-1 w-6 h-6 bg-white rounded-full transition-transform duration-300 ${config.isAiEnabled ? 'translate-x-8' : 'translate-x-0'}`} />
                         </button>
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                         <div className="space-y-4">
-                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Total Equity Pool (USD)</label>
+                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Equity Allocation (USD)</label>
                           <input 
                             type="number" value={config.accountUsd}
                             onChange={(e) => setConfig({...config, accountUsd: Number(e.target.value)})}
@@ -211,7 +272,7 @@ const App: React.FC = () => {
                           />
                         </div>
                         <div className="space-y-4">
-                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Max Risk Per Node (%)</label>
+                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Personal Risk Cap (%)</label>
                           <div className="bg-slate-950/60 border border-slate-800/60 rounded-2xl py-5 px-6 flex items-center justify-between">
                             <input 
                               type="range" min="0.1" max="5.0" step="0.1"
