@@ -1,0 +1,5 @@
+{
+  "name": "Metals Signal Bot",
+  "description": "A high-precision trading signal engine for metals ETFs (GLD, SLV, GDX, COPX, DBC) using 15m candle close logic, long-only strategies, and advanced risk management.",
+  "requestFramePermissions": []
+}
