@@ -1,7 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-// Fix: Added missing Sparkles icon import
-import { Sparkles } from 'lucide-react';
+import { Sparkles, ShieldAlert } from 'lucide-react';
 import { WATCHLIST, DEFAULT_CONFIG } from './constants';
 import { Candle, Signal, BotState, AppConfig, JournalTrade, MacroCheck } from './types';
 import { fetchLatestVix } from './services/dataModule';
@@ -35,7 +34,7 @@ const App: React.FC = () => {
   const [isRunning, setIsRunning] = useState(true);
   const [macroStatus, setMacroStatus] = useState<MacroCheck | null>(null);
 
-  // 1. Initialize Historical Context (Static)
+  // 1. Engine Warmup (Initialize Historical State)
   useEffect(() => {
     const initialData: Record<string, Candle[]> = {};
     WATCHLIST.forEach(symbol => {
@@ -44,7 +43,7 @@ const App: React.FC = () => {
     setMarketData(initialData);
   }, []);
 
-  // 2. High-Frequency Ticker Loop (Deterministic 5s)
+  // 2. High-Frequency Tick Loop (UI Responsiveness)
   useEffect(() => {
     if (!isRunning) return;
     const tick = async () => {
@@ -58,6 +57,7 @@ const App: React.FC = () => {
           const history = next[ticker.symbol] || [];
           if (history.length === 0) return;
           const last = history[history.length - 1];
+          // Roll current price into latest candle
           const newCandle: Candle = {
             ...last,
             timestamp: ticker.timestamp,
@@ -75,19 +75,19 @@ const App: React.FC = () => {
     return () => clearInterval(id);
   }, [isRunning]);
 
-  // 3. Low-Frequency Macro Validation Loop (AI Grounding 5m)
+  // 3. Low-Frequency Reality Check (Gemini Search Grounding)
   useEffect(() => {
     if (!isRunning || !config.isAiEnabled) return;
     const checkMacro = async () => {
-      const res = await validateMacroThesis(WATCHLIST);
-      setMacroStatus(res);
+      const result = await validateMacroThesis(WATCHLIST);
+      setMacroStatus(result);
     };
     checkMacro();
-    const id = setInterval(checkMacro, 300000);
+    const id = setInterval(checkMacro, 300000); // 5m verification cycles
     return () => clearInterval(id);
   }, [isRunning, config.isAiEnabled]);
 
-  // 4. Tactical Evaluation & Persistence
+  // 4. Signal Analysis & State Orchestration
   useEffect(() => {
     WATCHLIST.forEach(symbol => {
       const candles = marketData[symbol];
@@ -97,7 +97,7 @@ const App: React.FC = () => {
         symbol, candles, vix, botStates[symbol], cooldowns[symbol], config
       );
 
-      // Forensic Logging: Commit to Journal on LONG transition
+      // Automated Ledger Persistence
       if (botStates[symbol] === 'WAIT' && newState === 'LONG' && signal.action === 'BUY') {
         saveTrade({
           id: signal.id,
@@ -149,12 +149,11 @@ const App: React.FC = () => {
                   <div className="flex items-center justify-between p-6 bg-slate-950/40 rounded-3xl border border-slate-800/40">
                     <div className="flex items-center gap-5">
                       <div className={`p-4 rounded-2xl border transition-all ${config.isAiEnabled ? 'bg-blue-600/10 text-blue-400 border-blue-500/20 shadow-lg shadow-blue-500/5' : 'bg-slate-800/40 text-slate-500 border-slate-700/40'}`}>
-                        {/* Fix: Using Sparkles icon which is now imported */}
                         <Sparkles size={24} />
                       </div>
                       <div>
                         <h4 className="text-sm font-black text-white uppercase tracking-wider">AI Thesis Grounding</h4>
-                        <p className="text-[10px] text-slate-500 font-medium mt-1">Consult Gemini 3 Pro for world-event risk validation.</p>
+                        <p className="text-[10px] text-slate-500 font-medium mt-1">Verify technical setups against live global news cycles.</p>
                       </div>
                     </div>
                     <button 
@@ -167,7 +166,7 @@ const App: React.FC = () => {
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     <div className="space-y-4">
-                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Available Equity (USD)</label>
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Operating Equity (USD)</label>
                       <input 
                         type="number" value={config.accountUsd}
                         onChange={(e) => setConfig({...config, accountUsd: Number(e.target.value)})}

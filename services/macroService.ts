@@ -1,27 +1,32 @@
 
+/**
+ * @file services/macroService.ts
+ * @description Advanced Grounding Engine for Sector News.
+ */
+
 import { GoogleGenAI } from "@google/genai";
 import { MacroCheck } from '../types';
 
-/**
- * SECURITY NOTE: In production, the API Key should be handled via a secure backend proxy.
- * This client-side implementation uses the injected environment key for platform compatibility.
- */
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 /**
- * Performs a real-time web search for macro-economic catalysts.
- * Ensures the bot has "World Awareness" before committing capital.
+ * Validates the current market regime using Google Search Grounding.
+ * This acts as a "Circuit Breaker" for macro-level black swan events.
  */
 export const validateMacroThesis = async (symbols: string[]): Promise<MacroCheck> => {
   if (!process.env.API_KEY) {
-    return { isSafe: true, reason: "Macro validation bypass (No Key)", sources: [] };
+    return { isSafe: true, reason: "Bypassed (API Key Pending)", sources: [] };
   }
 
   const prompt = `
-    Search for current breaking news for the following ETFs: ${symbols.join(', ')}.
-    Identify if there are any significant negative catalysts (e.g. FOMC rate surprises, geopolitcal conflict, metal-specific production surges).
-    Respond with "SAFE" if no immediate long-side dangers exist.
-    If risky, provide a concise explanation starting with "RISK:".
+    Analyze current financial news and geopolitical events impacting the Metals Sector and ETFs: ${symbols.join(', ')}.
+    Check for:
+    1. Unexpected Central Bank rate decisions.
+    2. Geopolitical escalations affecting supply chains (Russia, China, Middle East).
+    3. Major mining production halts or labor strikes.
+    
+    If any significant "Black Swan" or bearish catalyst is active that would invalidate a LONG position in the next 24 hours, start your response with "RISK:".
+    Otherwise, respond with "SAFE".
   `;
 
   try {
@@ -36,7 +41,6 @@ export const validateMacroThesis = async (symbols: string[]): Promise<MacroCheck
     const text = response.text || "SAFE";
     const isSafe = !text.toUpperCase().includes("RISK:");
     
-    // Extract grounding sources for transparency/auditing
     const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
     const sources = groundingChunks
       .filter(chunk => chunk.web)
@@ -47,11 +51,10 @@ export const validateMacroThesis = async (symbols: string[]): Promise<MacroCheck
 
     return {
       isSafe,
-      reason: text,
-      sources: sources.slice(0, 5)
+      reason: text.replace("SAFE", "").replace("RISK:", "").trim() || "Market conditions stable.",
+      sources: sources.slice(0, 3)
     };
   } catch (error) {
-    console.warn("Macro Validation: Engine fallback to technical-only mode.");
-    return { isSafe: true, reason: "Market sentiment analysis currently unavailable.", sources: [] };
+    return { isSafe: true, reason: "News telemetry interrupted. Proceed with technical caution.", sources: [] };
   }
 };
