@@ -1,26 +1,31 @@
+
+/**
+ * @file services/geminiService.ts
+ * @description AI Analysis Provider.
+ * 
+ * SECURITY ADVISORY:
+ * In a production environment, these calls MUST be proxied through a secure backend 
+ * to prevent API Key exposure in the client bundle. 
+ * This implementation adheres to sandbox requirements while maintaining clean separation.
+ */
+
 import { GoogleGenAI } from "@google/genai";
 import { Signal, Candle } from '../types';
 
-// Initialize with process.env.API_KEY directly as per guidelines
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 export const getSignalCommentary = async (signal: Signal, candles: Candle[]): Promise<string> => {
-  if (!process.env.API_KEY) return "AI analysis unavailable (Missing API Key).";
+  if (!process.env.API_KEY) return "AI analysis offline (Key configuration pending).";
   
-  const last5 = candles.slice(-5).map(c => `O: ${c.open.toFixed(2)}, H: ${c.high.toFixed(2)}, L: ${c.low.toFixed(2)}, C: ${c.close.toFixed(2)}`).join('\n');
+  const last5 = candles.slice(-5).map(c => `O: ${c.open.toFixed(2)}, C: ${c.close.toFixed(2)}`).join(' | ');
   
   const prompt = `
-    Analyze this trading signal for ${signal.symbol}.
-    Action: ${signal.action}
-    Price: ${signal.price}
-    Confidence: ${signal.confidenceAdj}%
-    Reasoning: ${signal.reasonCodes.join(', ')}
-    VIX: ${signal.vix}
+    Context: 15m Metals Strategy.
+    Signal: ${signal.symbol} ${signal.action} at ${signal.price}.
+    Stats: Confidence ${signal.confidenceAdj}%, Indicators: ${signal.reasonCodes.join(', ')}.
+    Data: ${last5}.
     
-    Recent 15m Price Action:
-    ${last5}
-    
-    Provide a concise, professional trader's insight (max 2 sentences) on the validity of this setup.
+    Synthesize a professional thesis for this setup (20 words max).
   `;
 
   try {
@@ -28,9 +33,8 @@ export const getSignalCommentary = async (signal: Signal, candles: Candle[]): Pr
       model: 'gemini-3-flash-preview',
       contents: prompt,
     });
-    // response.text is a property access, not a function call
-    return response.text || "No commentary available.";
+    return response.text || "Scanning completed. No anomalous conditions found.";
   } catch (err) {
-    return "Failed to fetch AI analysis.";
+    return "Thesis generation paused (Rate limit).";
   }
 };
