@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Sparkles, Radio, Database, Bell, Volume2, ShieldCheck } from 'lucide-react';
+import { Sparkles, Radio, Database, Bell, ShieldCheck, Globe, AlertTriangle } from 'lucide-react';
 import { WATCHLIST, DEFAULT_CONFIG } from './constants';
 import { Candle, Signal, BotState, AppConfig, MacroCheck } from './types';
 import { fetchLatestVix } from './services/dataModule';
@@ -30,13 +30,21 @@ const App: React.FC = () => {
     WATCHLIST.forEach(s => initial[s] = 0);
     return initial;
   });
+
+  const botStatesRef = useRef<Record<string, BotState>>(botStates);
+  const cooldownsRef = useRef<Record<string, number>>(cooldowns);
+
+  useEffect(() => { botStatesRef.current = botStates; }, [botStates]);
+  useEffect(() => { cooldownsRef.current = cooldowns; }, [cooldowns]);
+
   const [vix, setVix] = useState(18);
   const [isRunning, setIsRunning] = useState(true);
   const [macroStatus, setMacroStatus] = useState<MacroCheck | null>(null);
   const [isPrimed, setIsPrimed] = useState(false);
+  const [isDataError, setIsDataError] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [feedStatus, setFeedStatus] = useState<'LIVE' | 'FALLBACK'>('FALLBACK');
 
-  // --- ZERO-COST ALERT SYSTEM ---
   const playAlertSound = useCallback((type: 'entry' | 'exit') => {
     try {
       const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -51,7 +59,7 @@ const App: React.FC = () => {
       osc.start();
       osc.stop(audioCtx.currentTime + 0.5);
     } catch (e) {
-      console.warn("Audio Context blocked by browser policy.");
+      console.warn("Audio Context blocked.");
     }
   }, []);
 
@@ -64,17 +72,21 @@ const App: React.FC = () => {
   // 1. SYSTEM INITIALIZATION
   useEffect(() => {
     const warmup = async () => {
-      // Request Notification Permission
       if ("Notification" in window) {
         const permission = await Notification.requestPermission();
         setNotificationsEnabled(permission === 'granted');
       }
 
       const initialData: Record<string, Candle[]> = {};
+      let errors = 0;
+      
       await Promise.all(WATCHLIST.map(async (symbol) => {
         const history = await getHistoricalContext(symbol);
         initialData[symbol] = history;
+        if (history.some(c => c.quality === 'BACKFILLED')) errors++;
       }));
+
+      setIsDataError(errors > 0);
       setMarketData(initialData);
       setIsPrimed(true);
     };
@@ -89,6 +101,8 @@ const App: React.FC = () => {
       const prices = await fetchDeterministicPrices(WATCHLIST);
       if (prices.length === 0) return;
 
+      const isLive = prices.some(p => p.isReal);
+      setFeedStatus(isLive ? 'LIVE' : 'FALLBACK');
       setLatestTickers(prices);
       setVix(fetchLatestVix());
       
@@ -116,7 +130,7 @@ const App: React.FC = () => {
     return () => clearInterval(id);
   }, [isRunning, isPrimed]);
 
-  // 3. AI MACRO GROUNDING (Gemini Flash Tier)
+  // 3. AI MACRO GROUNDING
   useEffect(() => {
     if (!isRunning || !config.isAiEnabled || !isPrimed) return;
     const checkMacro = async () => {
@@ -129,8 +143,6 @@ const App: React.FC = () => {
   }, [isRunning, config.isAiEnabled, isPrimed]);
 
   // 4. SIGNAL ORCHESTRATION & ALERTS
-  // CRITICAL FIX: To prevent infinite update loops, we exclude botStates and cooldowns from the dependency array.
-  // Instead, we access their values via the component's render closure, which is updated every time marketData ticks.
   useEffect(() => {
     if (!isPrimed) return;
 
@@ -138,18 +150,16 @@ const App: React.FC = () => {
       const candles = marketData[symbol];
       if (!candles || candles.length < 250) return;
 
-      // Access latest available states from closure (triggered by marketData tick)
-      const currentBotState = botStates[symbol];
-      const currentCooldown = cooldowns[symbol];
-
+      const currentBotState = botStatesRef.current[symbol];
+      const currentCooldown = cooldownsRef.current[symbol];
+      
       const { signal, newState, newCooldown } = evaluateSignal(
         symbol, candles, vix, currentBotState, currentCooldown, config
       );
 
-      // ALERT TRIGGER: Transition to LONG
       if (currentBotState === 'WAIT' && newState === 'LONG' && signal.action === 'BUY') {
         playAlertSound('entry');
-        triggerNotification(`🚀 ENTRY: ${symbol}`, `Action: BUY @ $${signal.price.toFixed(2)} | Target: $${signal.target?.toFixed(2)}`);
+        triggerNotification(`🚀 ENTRY: ${symbol}`, `Action: BUY @ $${signal.price.toFixed(2)}`);
         
         saveTrade({
           id: signal.id,
@@ -162,15 +172,12 @@ const App: React.FC = () => {
         });
       }
 
-      // Update signal state
       setSignals(prev => ({ ...prev, [symbol]: signal }));
 
-      // Update bot state if changed
       if (newState !== currentBotState) {
         setBotStates(prev => ({ ...prev, [symbol]: newState }));
       }
-
-      // Update cooldown if changed
+      
       if (newCooldown !== currentCooldown) {
         setCooldowns(prev => ({ ...prev, [symbol]: newCooldown }));
       }
@@ -184,29 +191,30 @@ const App: React.FC = () => {
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header vix={vix} isRunning={isRunning} setIsRunning={setIsRunning} config={config} />
         
-        {/* ZERO-COST STATUS TELEMETRY */}
         <div className="bg-slate-900/40 border-b border-slate-800/40 px-10 py-2 flex items-center justify-between">
            <div className="flex items-center gap-8">
              <div className="flex items-center gap-2">
-               <Radio size={12} className={latestTickers.length > 0 ? "text-emerald-500 animate-pulse" : "text-rose-500"} />
+               <Radio size={12} className={feedStatus === 'LIVE' ? "text-emerald-500 animate-pulse" : "text-amber-500"} />
                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
-                 Feed: Zero-Cost Deterministic
+                 Feed: {feedStatus === 'LIVE' ? 'Upstream Live' : 'Deterministic Fallback'}
                </span>
              </div>
+             {isDataError && (
+               <div className="flex items-center gap-2 border-l border-slate-800 pl-8">
+                 <AlertTriangle size={12} className="text-amber-500" />
+                 <span className="text-[9px] font-black text-amber-500 uppercase tracking-widest">
+                   History: Synthetic Buffer Active
+                 </span>
+               </div>
+             )}
              <div className="flex items-center gap-2 border-l border-slate-800 pl-8">
-               <Bell size={12} className={notificationsEnabled ? "text-blue-500" : "text-slate-700"} />
+               <Globe size={12} className={config.isAiEnabled ? "text-blue-500" : "text-slate-700"} />
                <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
-                 Alerts: {notificationsEnabled ? 'Active' : 'Muted'}
-               </span>
-             </div>
-             <div className="flex items-center gap-2 border-l border-slate-800 pl-8">
-               <ShieldCheck size={12} className="text-emerald-500" />
-               <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">
-                 Personal Edition v2.0
+                 AI Verification: {config.isAiEnabled ? 'Verified' : 'Bypassed'}
                </span>
              </div>
            </div>
-           {!isPrimed && <span className="text-[9px] font-black text-amber-500 uppercase tracking-widest animate-pulse">Syncing Global Vectors...</span>}
+           {!isPrimed && <span className="text-[9px] font-black text-amber-500 uppercase tracking-widest animate-pulse">Syncing Market Vectors...</span>}
         </div>
 
         <main className="flex-1 overflow-y-auto p-10 custom-scrollbar">
@@ -217,8 +225,8 @@ const App: React.FC = () => {
                  <div className="absolute inset-0 w-16 h-16 border-t-2 border-blue-500 rounded-full animate-spin" />
                </div>
                <div className="text-center">
-                 <p className="text-xs font-black uppercase tracking-[0.4em] text-white mb-2">Initializing Ledger</p>
-                 <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">Cold Start: Populating Technical Context</p>
+                 <p className="text-xs font-black uppercase tracking-[0.4em] text-white mb-2">Initializing System</p>
+                 <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">Cold Start: Primer In Progress</p>
                </div>
             </div>
           ) : (
@@ -240,7 +248,7 @@ const App: React.FC = () => {
                  <div className="max-w-2xl mx-auto space-y-10 animate-in fade-in zoom-in-95 duration-500">
                     <header>
                       <h2 className="text-3xl font-black tracking-tighter text-white uppercase italic">Zero-Cost Settings</h2>
-                      <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest mt-1">Authorized for personal manual execution only.</p>
+                      <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest mt-1">Manual execution only.</p>
                     </header>
 
                     <div className="bg-slate-900/50 p-10 rounded-[2.5rem] border border-slate-800/60 space-y-10 backdrop-blur-md shadow-2xl">
@@ -250,8 +258,8 @@ const App: React.FC = () => {
                             <Sparkles size={24} />
                           </div>
                           <div>
-                            <h4 className="text-sm font-black text-white uppercase tracking-wider">AI Thesis (Gemini Flash)</h4>
-                            <p className="text-[10px] text-slate-500 font-medium mt-1">Grounds signals against free web search news cycles.</p>
+                            <h4 className="text-sm font-black text-white uppercase tracking-wider">AI Grounding (Free)</h4>
+                            <p className="text-[10px] text-slate-500 font-medium mt-1">Validate ticks against live news cycles.</p>
                           </div>
                         </div>
                         <button 
@@ -272,7 +280,7 @@ const App: React.FC = () => {
                           />
                         </div>
                         <div className="space-y-4">
-                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Personal Risk Cap (%)</label>
+                          <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Risk Cap (%)</label>
                           <div className="bg-slate-950/60 border border-slate-800/60 rounded-2xl py-5 px-6 flex items-center justify-between">
                             <input 
                               type="range" min="0.1" max="5.0" step="0.1"

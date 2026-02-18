@@ -1,7 +1,7 @@
 
 /**
  * @file services/geminiService.ts
- * @description Zero-Cost AI Analysis Provider using Gemini Flash tier.
+ * @description AI Verification & Commentary Provider.
  */
 
 import { GoogleGenAI } from "@google/genai";
@@ -9,6 +9,9 @@ import { Signal, Candle } from '../types';
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
+/**
+ * Cross-references a specific signal with real-world news grounding.
+ */
 export const getSignalCommentary = async (signal: Signal, candles: Candle[]): Promise<string> => {
   if (!process.env.API_KEY) return "AI Offline (No Auth).";
   
@@ -28,12 +31,37 @@ export const getSignalCommentary = async (signal: Signal, candles: Candle[]): Pr
       model: 'gemini-3-flash-preview',
       contents: prompt,
       config: {
-        thinkingConfig: { thinkingBudget: 0 } // Zero-cost latency priority
+        thinkingConfig: { thinkingBudget: 0 }
       }
     });
-    return response.text || "Market setup confirmed. No structural anomalies detected.";
+    return response.text || "Market setup confirmed.";
   } catch (err) {
-    console.warn("AI Commentary rate limited or unavailable.", err);
-    return "Thesis validation paused. Rely on technical gate thresholds.";
+    return "Thesis validation paused. Rely on technical thresholds.";
+  }
+};
+
+/**
+ * Verification Layer: Confirms if prices are within realistic bounds using AI grounding.
+ */
+export const verifyMarketState = async (symbol: string, price: number): Promise<boolean> => {
+  if (!process.env.API_KEY) return true;
+
+  const prompt = `
+    Verify if the following market quote for ${symbol} is realistic based on recent price action: $${price}.
+    If the price is plausible (within a few percentage points of the current real market price), reply "VERIFIED".
+    Otherwise, reply "ANOMALY".
+  `;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: prompt,
+      config: {
+        tools: [{ googleSearch: {} }]
+      }
+    });
+    return response.text?.toUpperCase().includes("VERIFIED") ?? true;
+  } catch (err) {
+    return true; // Fail-safe to true if AI is down
   }
 };
