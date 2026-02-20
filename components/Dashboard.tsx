@@ -3,7 +3,7 @@ import React from 'react';
 import { Signal, Candle, BotState, MacroCheck } from '../types';
 import { MarketTicker } from '../services/marketProvider';
 import SignalCard from './SignalCard';
-import { Activity, ShieldAlert, Globe, Zap, Cpu } from 'lucide-react';
+import { ShieldCheck, ShieldX, Activity, Zap, Cpu, Server, Network } from 'lucide-react';
 
 interface DashboardProps {
   watchlist: string[];
@@ -24,25 +24,71 @@ const Dashboard: React.FC<DashboardProps> = ({
   macroStatus, 
   isAiEnabled 
 }) => {
+  const realTickerCount = tickers.filter(t => t.isReal).length;
+  const integrityScore = Math.round((realTickerCount / watchlist.length) * 100);
+  const activeProxy = tickers.find(t => t.sourceProxy)?.sourceProxy || "SEARCHING";
+
   return (
     <div className="space-y-10 animate-in fade-in slide-in-from-bottom-6 duration-1000">
       
+      {/* TACTICAL DATA MONITOR */}
+      <section className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="bg-[#0f172a]/80 border border-slate-800/60 p-6 rounded-3xl backdrop-blur-md">
+          <div className="flex items-center justify-between mb-4">
+            <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Integrity Score</span>
+            <ShieldCheck size={14} className={integrityScore > 80 ? "text-emerald-500" : "text-amber-500"} />
+          </div>
+          <div className="flex items-baseline gap-2">
+            <span className={`text-3xl font-black font-mono tracking-tighter ${integrityScore > 80 ? 'text-emerald-500' : 'text-amber-500'}`}>
+              {integrityScore}/100
+            </span>
+          </div>
+          <p className="text-[8px] text-slate-600 font-bold uppercase mt-2">Real-World Vector Ratio</p>
+        </div>
+
+        <div className="bg-[#0f172a]/80 border border-slate-800/60 p-6 rounded-3xl backdrop-blur-md">
+          <div className="flex items-center justify-between mb-4">
+            <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Active Proxy</span>
+            <Network size={14} className="text-blue-500" />
+          </div>
+          <span className="text-xl font-black text-white tracking-tighter uppercase italic">
+            {activeProxy}
+          </span>
+          <p className="text-[8px] text-slate-600 font-bold uppercase mt-2">Upstream Tunnel</p>
+        </div>
+
+        <div className="bg-[#0f172a]/80 border border-slate-800/60 p-6 rounded-3xl backdrop-blur-md">
+          <div className="flex items-center justify-between mb-4">
+            <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">AI Audit</span>
+            <Cpu size={14} className={isAiEnabled ? "text-blue-500" : "text-slate-700"} />
+          </div>
+          <span className="text-xl font-black text-white tracking-tighter">
+            {isAiEnabled ? 'GROUNDED' : 'BLIND'}
+          </span>
+          <p className="text-[8px] text-slate-600 font-bold uppercase mt-2">Logic Verification</p>
+        </div>
+
+        <div className="bg-[#0f172a]/80 border border-slate-800/60 p-6 rounded-3xl backdrop-blur-md">
+          <div className="flex items-center justify-between mb-4">
+            <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">VIX Sensitivity</span>
+            <Activity size={14} className="text-rose-500" />
+          </div>
+          <span className="text-xl font-black text-white tracking-tighter uppercase">
+            ACTIVE
+          </span>
+          <p className="text-[8px] text-slate-600 font-bold uppercase mt-2">Regime Volatility Filter</p>
+        </div>
+      </section>
+
       {/* MACRO ALERT BANNER */}
       {macroStatus && !macroStatus.isSafe && (
         <div className="bg-rose-500/10 border border-rose-500/30 rounded-[2rem] p-6 flex items-start gap-6 backdrop-blur-md shadow-2xl shadow-rose-900/10 animate-pulse">
           <div className="p-4 bg-rose-500 rounded-2xl text-white">
-            <ShieldAlert size={28} />
+            <ShieldX size={28} />
           </div>
           <div className="flex-1">
             <h3 className="text-rose-500 font-black text-sm uppercase tracking-widest mb-1">Macro Integrity Alert</h3>
             <p className="text-slate-300 text-xs font-medium leading-relaxed uppercase tracking-tight italic">"{macroStatus.reason}"</p>
-          </div>
-          <div className="flex flex-col gap-2">
-            {macroStatus.sources.map((s, i) => (
-              <a key={i} href={s.uri} target="_blank" className="text-[9px] font-black text-rose-400 hover:text-white transition-colors bg-rose-500/10 px-3 py-1 rounded-lg border border-rose-500/20">
-                SOURCE {i+1}
-              </a>
-            ))}
           </div>
         </div>
       )}
@@ -55,18 +101,8 @@ const Dashboard: React.FC<DashboardProps> = ({
               <Zap size={24} fill="currentColor" />
             </div>
             <div>
-              <h2 className="text-xl font-black text-white tracking-tight uppercase">Price Pulse</h2>
-              <p className="text-[10px] text-slate-500 font-black tracking-widest uppercase mt-0.5">Live Deterministic Tick Feed (5s)</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl">
-              <Cpu size={14} className="text-slate-500" />
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">FSM Processing</span>
-            </div>
-            <div className="flex items-center gap-2 px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl">
-              <Globe size={14} className="text-slate-500" />
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Macro Scanned</span>
+              <h2 className="text-xl font-black text-white tracking-tight uppercase">Live Pulse</h2>
+              <p className="text-[10px] text-slate-500 font-black tracking-widest uppercase mt-0.5">Real-Time Sync Terminal</p>
             </div>
           </div>
         </div>
@@ -75,8 +111,10 @@ const Dashboard: React.FC<DashboardProps> = ({
           {watchlist.map(symbol => {
             const ticker = tickers.find(t => t.symbol === symbol);
             const isUp = (ticker?.changePercent || 0) >= 0;
+            const isReal = ticker?.isReal ?? false;
             return (
-              <div key={symbol} className="bg-slate-950/40 border border-slate-800/60 p-6 rounded-3xl flex flex-col gap-1 transition-all hover:scale-[1.02] hover:bg-slate-950 hover:border-blue-500/40 group cursor-default">
+              <div key={symbol} className={`relative bg-slate-950/40 border p-6 rounded-3xl flex flex-col gap-1 transition-all group overflow-hidden ${isReal ? 'border-slate-800/60' : 'border-amber-500/30'}`}>
+                {!isReal && <div className="absolute top-0 right-0 px-2 py-0.5 bg-amber-500 text-black text-[7px] font-black uppercase tracking-tighter">SIMULATED</div>}
                 <span className="text-[9px] font-black text-slate-500 group-hover:text-blue-400 tracking-widest transition-colors">{symbol}</span>
                 <div className="text-2xl font-black font-mono text-white tracking-tighter">
                   ${ticker?.price.toFixed(2) || "---"}
@@ -101,6 +139,7 @@ const Dashboard: React.FC<DashboardProps> = ({
             state={botStates[symbol]}
             isAiEnabled={isAiEnabled}
             macroStatus={macroStatus}
+            isReal={tickers.find(t => t.symbol === symbol)?.isReal ?? false}
           />
         ))}
       </section>

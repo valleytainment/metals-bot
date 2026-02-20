@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Signal, Candle, BotState, MacroCheck } from '../types';
 import TradingChart from './TradingChart';
 import { getSignalCommentary } from '../services/geminiService';
-import { Info, CheckCircle2, XCircle, Sparkles, ShieldAlert, Copy, ExternalLink } from 'lucide-react';
+import { Info, CheckCircle2, XCircle, Sparkles, ShieldAlert, ShieldCheck, Copy, ExternalLink, Activity } from 'lucide-react';
 import { calculateIndicators } from '../services/indicators';
 
 interface SignalCardProps {
@@ -13,9 +13,10 @@ interface SignalCardProps {
   state: BotState;
   isAiEnabled: boolean;
   macroStatus: MacroCheck | null;
+  isReal: boolean;
 }
 
-const SignalCard: React.FC<SignalCardProps> = ({ symbol, signal, candles, state, isAiEnabled, macroStatus }) => {
+const SignalCard: React.FC<SignalCardProps> = ({ symbol, signal, candles, state, isAiEnabled, macroStatus, isReal }) => {
   const [commentary, setCommentary] = useState<string>("Analyzing market structure...");
   const [isLoading, setIsLoading] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -53,33 +54,27 @@ const SignalCard: React.FC<SignalCardProps> = ({ symbol, signal, candles, state,
   const isPriceUp = latest && prev ? latest.close >= prev.close : true;
 
   return (
-    <div className="bg-[#0f172a]/60 border border-slate-800/60 rounded-[2.5rem] overflow-hidden flex flex-col shadow-2xl transition-all hover:border-blue-500/30 group">
+    <div className="bg-[#0f172a]/60 border border-slate-800/60 rounded-[2.5rem] overflow-hidden flex flex-col shadow-2xl transition-all hover:border-blue-500/30 group relative">
       
+      {/* INTEGRITY OVERLAY */}
+      <div className="absolute top-8 right-10 flex items-center gap-2">
+         <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full border text-[8px] font-black uppercase tracking-tighter ${isReal ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-500' : 'bg-amber-500/10 border-amber-500/20 text-amber-500'}`}>
+           {isReal ? <ShieldCheck size={10} /> : <ShieldAlert size={10} />}
+           {isReal ? 'Verified Feed' : 'Synthetic Mode'}
+         </div>
+      </div>
+
       <div className="px-10 py-7 border-b border-slate-800/40 flex justify-between items-center bg-slate-900/30 backdrop-blur-sm">
         <div className="flex items-center gap-5">
           <div className={`w-1.5 h-12 rounded-full ${state === 'LONG' ? 'bg-emerald-500 animate-pulse' : 'bg-slate-700'}`} />
           <div>
-            <h3 className="text-3xl font-black text-white group-hover:text-blue-500 transition-colors tracking-tighter">{symbol}</h3>
+            <h3 className="text-3xl font-black text-white group-hover:text-blue-500 transition-colors tracking-tighter uppercase">{symbol}</h3>
             <p className="text-[9px] text-slate-500 font-black tracking-widest uppercase mt-0.5">
               {state === 'LONG' ? 'Personal Asset Active' : 'Market Watchlist'}
             </p>
           </div>
         </div>
-        <div className={`px-6 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 ${
-          signal?.action === 'BUY' ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'bg-slate-800 text-slate-400'
-        }`}>
-          {signal?.action || 'SCANNING'}
-        </div>
       </div>
-
-      {macroStatus && !macroStatus.isSafe && (
-        <div className="bg-rose-500/10 border-b border-rose-500/20 px-10 py-4 flex items-center gap-4">
-          <ShieldAlert size={16} className="text-rose-500" />
-          <p className="text-[10px] font-black text-rose-500 uppercase tracking-widest line-clamp-1">
-            ALERT: {macroStatus.reason}
-          </p>
-        </div>
-      )}
 
       <div className="flex-1 flex flex-col p-10 space-y-10">
         <div className="flex items-center justify-between">

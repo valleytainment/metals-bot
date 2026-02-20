@@ -7,8 +7,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { Signal, Candle } from '../types';
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
 /**
  * Cross-references a specific signal with real-world news grounding.
  */
@@ -27,6 +25,8 @@ export const getSignalCommentary = async (signal: Signal, candles: Candle[]): Pr
   `;
 
   try {
+    // Re-instantiate the client right before the call to handle dynamic API key context
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: prompt,
@@ -53,6 +53,8 @@ export const verifyMarketState = async (symbol: string, price: number): Promise<
   `;
 
   try {
+    // Re-instantiate the client right before the call to handle dynamic API key context
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: prompt,

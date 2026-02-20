@@ -2,7 +2,8 @@
 import { Candle, CandleQuality } from '../types';
 
 /**
- * Generates synthetic candle data for simulation/testing
+ * Generates synthetic candle data strictly for backtesting simulation only.
+ * This is not used in the live market engine.
  */
 export const generateMockCandles = (
   symbol: string, 
@@ -31,7 +32,7 @@ export const generateMockCandles = (
       low,
       close,
       volume,
-      quality: 'REALTIME',
+      quality: 'BACKFILLED',
       anomalies: []
     });
     currentPrice = close;
@@ -39,7 +40,10 @@ export const generateMockCandles = (
   return candles;
 };
 
+/**
+ * VIX is now sourced from the live MarketTicker feed.
+ * This function is kept as a placeholder if local logic is needed.
+ */
 export const fetchLatestVix = (): number => {
-  // Mock VIX value
-  return 15 + Math.random() * 20; // 15 to 35
+  return 0; // Handled by App.tsx from live ticker data
 };

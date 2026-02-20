@@ -1,8 +1,9 @@
 
 /**
  * @file services/marketProvider.ts
- * @description Real-World Market Data Provider with Multi-Tier Resilient Proxying.
- * Prioritizes upstream integrity over local simulation.
+ * @description Pure Real-World Market Data Engine. 
+ * Strict integrity: No synthetic generators, no seeded fallbacks. 
+ * If the link is severed, the system halts.
  */
 
 import { Candle } from '../types';
@@ -15,132 +16,122 @@ export interface MarketTicker {
   volume: number;
   timestamp: number;
   changePercent: number;
-  isReal?: boolean;
+  isReal: boolean;
+  sourceProxy?: string;
 }
 
-const ASSET_METRICS: Record<string, { base: number; vol: number }> = {
-  'GLD': { base: 245.50, vol: 0.15 },
-  'SLV': { base: 28.30, vol: 0.22 },
-  'GDX': { base: 38.15, vol: 0.28 },
-  'COPX': { base: 45.90, vol: 0.25 },
-  'DBC': { base: 22.10, vol: 0.12 }
-};
-
 /**
- * Advanced Proxy Tier System
- * Different proxies require different query structures. 
+ * STATEFUL PROXY HEALTH TRACKER
  */
-const PROXY_TIERS = [
-  { url: "https://corsproxy.io/?", type: 'DIRECT' },
-  { url: "https://api.allorigins.win/raw?url=", type: 'ENCODED' },
-  { url: "https://api.codetabs.com/v1/proxy?quest=", type: 'ENCODED' }
+interface ProxyNode {
+  name: string;
+  url: string;
+  failureCount: number;
+  lastFailure: number;
+}
+
+const PROXY_NODES: ProxyNode[] = [
+  { name: 'CORS.IO', url: "https://corsproxy.io/?", failureCount: 0, lastFailure: 0 },
+  { name: 'ALLORIGINS', url: "https://api.allorigins.win/raw?url=", failureCount: 0, lastFailure: 0 },
+  { name: 'CODETABS', url: "https://api.codetabs.com/v1/proxy?quest=", failureCount: 0, lastFailure: 0 }
 ];
 
-/**
- * Intelligent fetch wrapper with error detection for non-JSON payloads.
- */
-async function resilientFetch(url: string): Promise<any> {
-  let lastError = null;
-  
-  for (const tier of PROXY_TIERS) {
-    try {
-      const fullUrl = tier.type === 'ENCODED' 
-        ? `${tier.url}${encodeURIComponent(url)}` 
-        : `${tier.url}${url}`;
+const CIRCUIT_BREAKER_THRESHOLD = 3;
+const COOLDOWN_PERIOD = 60000;
 
-      const response = await fetch(fullUrl, {
+const getHealthyProxies = () => {
+  const now = Date.now();
+  return [...PROXY_NODES].sort((a, b) => {
+    const aPenalty = (a.failureCount >= CIRCUIT_BREAKER_THRESHOLD && now - a.lastFailure < COOLDOWN_PERIOD) ? 1000 : a.failureCount;
+    const bPenalty = (b.failureCount >= CIRCUIT_BREAKER_THRESHOLD && now - b.lastFailure < COOLDOWN_PERIOD) ? 1000 : b.failureCount;
+    return aPenalty - bPenalty;
+  });
+};
+
+async function ultraFetch(url: string): Promise<{ data: any; proxy: string }> {
+  let lastError = null;
+  const healthyProxies = getHealthyProxies();
+  
+  for (const proxy of healthyProxies) {
+    try {
+      const target = proxy.name === 'CORS.IO' ? `${proxy.url}${url}` : `${proxy.url}${encodeURIComponent(url)}`;
+      
+      const response = await fetch(target, {
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
           'Accept': 'application/json'
         },
-        signal: AbortSignal.timeout(8000) // Don't hang on slow proxies
+        signal: AbortSignal.timeout(10000)
       });
 
-      if (!response.ok) continue;
-
-      const contentType = response.headers.get('content-type') || '';
-      if (contentType.includes('text/html')) {
-        // Proxy returned an error page or auth wall
-        continue;
+      const text = await response.text();
+      
+      if (!response.ok || text.includes('Too many requests') || text.includes('Edge:') || text.includes('Error:')) {
+        throw new Error(`Proxy ${proxy.name} rejected: ${text.slice(0, 40)}`);
       }
 
-      const data = await response.json();
-      if (data) return data;
-    } catch (e) {
+      const data = JSON.parse(text);
+      proxy.failureCount = 0;
+      return { data, proxy: proxy.name };
+
+    } catch (e: any) {
+      console.warn(`[DATA_LINK_WARNING] ${proxy.name} failed: ${e.message}`);
+      proxy.failureCount++;
+      proxy.lastFailure = Date.now();
       lastError = e;
     }
   }
-  throw lastError || new Error("UPSTREAM_CONNECTION_TIMEOUT");
+  throw lastError || new Error("UPSTREAM_TOTAL_BLACKOUT");
 }
 
 /**
- * Deterministic fallback generator (EMERGENCY ONLY).
- */
-const generateSeededPrice = (symbol: string, timestamp: number): number => {
-  const metrics = ASSET_METRICS[symbol] || { base: 100, vol: 0.1 };
-  const tick = Math.floor(timestamp / 5000);
-  const hash = Array.from(symbol + tick).reduce((a, b) => { a = ((a << 5) - a) + b.charCodeAt(0); return a & a; }, 0);
-  const noise = (Math.sin(hash) * 10000 - Math.floor(Math.sin(hash) * 10000)) - 0.5;
-  return metrics.base + (noise * metrics.vol);
-};
-
-/**
- * Fetches real-time quotes using resilient proxy chain.
+ * Fetches real-time price vectors including the VIX (^VIX).
  */
 export const fetchDeterministicPrices = async (symbols: string[]): Promise<MarketTicker[]> => {
-  const symbolList = symbols.join(',');
-  const yahooUrl = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbolList}`;
+  // Include VIX in the quote request to ensure volatility data is real-world
+  const querySymbols = [...symbols, '^VIX'].join(',');
+  const yahooUrl = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${querySymbols}`;
   
   try {
-    const data = await resilientFetch(yahooUrl);
+    const { data, proxy } = await ultraFetch(yahooUrl);
     const results = data.quoteResponse?.result || [];
 
     if (results.length === 0) throw new Error("UPSTREAM_EMPTY");
 
     return results.map((quote: any) => ({
       symbol: quote.symbol,
-      price: quote.regularMarketPrice || generateSeededPrice(quote.symbol, Date.now()),
+      price: quote.regularMarketPrice,
       high: quote.regularMarketDayHigh || quote.regularMarketPrice,
       low: quote.regularMarketDayLow || quote.regularMarketPrice,
       volume: quote.regularMarketVolume || 0,
       timestamp: (quote.regularMarketTime || Date.now() / 1000) * 1000,
       changePercent: quote.regularMarketChangePercent || 0,
-      isReal: true
+      isReal: true,
+      sourceProxy: proxy
     }));
   } catch (error) {
-    console.warn("Real-time quote engine stalled. Activating deterministic fallback vectors.", error);
-    const now = Date.now();
-    return symbols.map(symbol => ({
-      symbol,
-      price: generateSeededPrice(symbol, now),
-      high: generateSeededPrice(symbol, now) + 0.1,
-      low: generateSeededPrice(symbol, now) - 0.1,
-      volume: 0,
-      timestamp: now,
-      changePercent: 0,
-      isReal: false
-    }));
+    console.error("CRITICAL_UPSTREAM_FAILURE: Connection severed. No simulation available.");
+    return [];
   }
 };
 
 /**
- * Backfills historical context. 
- * If primary Yahoo Chart fails, attempts secondary public source before falling back to simulation.
+ * Historical Data Integrity Primer.
  */
 export const getHistoricalContext = async (symbol: string): Promise<Candle[]> => {
   const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=15m&range=5d`;
   
   try {
-    const data = await resilientFetch(yahooUrl);
+    const { data } = await ultraFetch(yahooUrl);
     const result = data.chart?.result?.[0];
-    if (!result) throw new Error("CHART_MALFORMED");
+    if (!result) throw new Error("UPSTREAM_MALFORMED");
 
     const indicators = result.indicators?.quote?.[0];
     const timestamps = result.timestamp;
 
-    if (!timestamps || !indicators) throw new Error("CHART_INCOMPLETE");
+    if (!timestamps || !indicators) throw new Error("UPSTREAM_INCOMPLETE");
 
-    const candles = timestamps.map((ts: number, i: number) => {
+    return timestamps.map((ts: number, i: number) => {
       const close = indicators.close[i];
       if (close === null || close === undefined) return null;
 
@@ -155,46 +146,8 @@ export const getHistoricalContext = async (symbol: string): Promise<Candle[]> =>
         anomalies: []
       };
     }).filter((c: any) => c !== null);
-
-    if (candles.length < 50) throw new Error("INSUFFICIENT_HISTORY");
-    return candles;
-
   } catch (error) {
-    console.warn(`Primary history primer for ${symbol} failed. Switching to secondary upstream source...`);
-    
-    // Tier 2 Fallback: Alternative Public API (Simulated structure if secondary fails)
-    try {
-      // Logic for another source could go here (e.g. Stooq or secondary proxy)
-      // For now, we perform a controlled recovery to prevent engine crash.
-      return createSafetyBuffer(symbol);
-    } catch (e) {
-      return createSafetyBuffer(symbol);
-    }
+    console.error(`Historical primer for ${symbol} failed. Connection strictly required.`);
+    return [];
   }
 };
-
-/**
- * Produces a high-fidelity synthetic buffer to maintain technical indicator stability 
- * during upstream outages.
- */
-function createSafetyBuffer(symbol: string): Candle[] {
-  const candles: Candle[] = [];
-  const now = Date.now();
-  const basePrice = ASSET_METRICS[symbol]?.base || 100;
-  
-  for (let i = 300; i >= 0; i--) {
-    const ts = now - (i * 15 * 60 * 1000);
-    const price = generateSeededPrice(symbol, ts);
-    candles.push({
-      timestamp: ts,
-      open: price, 
-      high: price + (Math.random() * 0.1), 
-      low: price - (Math.random() * 0.1), 
-      close: price,
-      volume: 10000, 
-      quality: 'BACKFILLED', 
-      anomalies: ['SIMULATED_DATA_PROTECTION']
-    });
-  }
-  return candles;
-}

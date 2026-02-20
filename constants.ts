@@ -20,6 +20,7 @@ export const ATR_MULTIPLIER_TARGET = 4.0;
 export const COOLDOWN_BARS = 3;
 
 /** Out-of-the-box safe defaults for account risk management */
+// Added missing paperTrading property to satisfy AppConfig interface requirements.
 export const DEFAULT_CONFIG: AppConfig = {
   accountUsd: 10000,
   riskPct: 0.5,
@@ -27,4 +28,5 @@ export const DEFAULT_CONFIG: AppConfig = {
   vixThresholdPause: 30,
   watchlist: WATCHLIST,
   isAiEnabled: true,
+  paperTrading: true,
 };

@@ -7,8 +7,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { MacroCheck } from '../types';
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
 /**
  * Validates the current market regime using Google Search Grounding.
  * This acts as a "Circuit Breaker" for macro-level black swan events.
@@ -30,6 +28,8 @@ export const validateMacroThesis = async (symbols: string[]): Promise<MacroCheck
   `;
 
   try {
+    // Create a new instance right before the call to ensure the latest API key is used
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
       model: "gemini-3-pro-preview",
       contents: prompt,
@@ -41,6 +41,7 @@ export const validateMacroThesis = async (symbols: string[]): Promise<MacroCheck
     const text = response.text || "SAFE";
     const isSafe = !text.toUpperCase().includes("RISK:");
     
+    // Extracting URLs from groundingChunks as per Google Search Grounding guidelines
     const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
     const sources = groundingChunks
       .filter(chunk => chunk.web)

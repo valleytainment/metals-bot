@@ -17,6 +17,11 @@ export interface Candle {
   volume: number;
   quality: CandleQuality;
   anomalies: string[];
+  ema20?: number;
+  ema200?: number;
+  rsi14?: number;
+  atr14?: number;
+  volSma20?: number;
 }
 
 export interface Indicators {
@@ -42,7 +47,7 @@ export interface Signal {
   reasonCodes: string[];
   vix: number;
   isStale: boolean;
-  macroThesis?: string; // New: AI-validated macro context
+  macroThesis?: string;
 }
 
 export interface JournalTrade {
@@ -60,6 +65,24 @@ export interface JournalTrade {
   rMultiple?: number;
 }
 
+export interface Position {
+  symbol: string;
+  entry: number;
+  shares: number;
+  stop: number;
+  target: number;
+  openedTs: number;
+}
+
+export interface PaperAccount {
+  balance: number;
+  equity: number;
+  peakEquity: number;
+  drawdown: number;
+  dailyPnL: number;
+  history: { timestamp: number; equity: number }[];
+}
+
 export interface AppConfig {
   accountUsd: number;
   riskPct: number;
@@ -67,10 +90,19 @@ export interface AppConfig {
   vixThresholdPause: number;
   watchlist: string[];
   isAiEnabled: boolean;
+  paperTrading: boolean;
 }
 
 export interface MacroCheck {
   isSafe: boolean;
   reason: string;
   sources: { title: string; uri: string }[];
+}
+
+export interface IStrategy {
+  name: string;
+  timeframe: string;
+  populateIndicators(candles: Candle[]): Candle[];
+  checkEntry(symbol: string, candles: Candle[], vix: number, config: AppConfig): Signal | null;
+  checkExit(position: Position, currentCandle: Candle): boolean;
 }
